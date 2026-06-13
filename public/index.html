@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Networking Practice</title>
+</head>
+<body>
+
+    <h1>Shared Counter</h1>
+
+    <div>
+        <input id="nameInput" placeholder="Enter your name">
+        <button id="nameButton">Set Name</button>
+    </div>
+
+    <h2>Connected Users: <span id="userCount">0</span></h2>
+
+    <h2>Players</h2>
+    <ul id="playerList"></ul>
+
+    <h2>Counter: <span id="counter">0</span></h2>
+
+    <button id="addButton">+1</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+
+        const counter = document.getElementById("counter");
+        const button = document.getElementById("addButton");
+
+        const nameInput = document.getElementById("nameInput");
+        const nameButton = document.getElementById("nameButton");
+
+        const userCount = document.getElementById("userCount");
+        const playerList = document.getElementById("playerList");
+
+        socket.on("counterUpdate", (count) => {
+            counter.textContent = count;
+        });
+
+        socket.on("playersUpdate", (players) => {
+            const playerNames = Object.values(players);
+
+            userCount.textContent = playerNames.length;
+
+            playerList.innerHTML = "";
+
+            playerNames.forEach((name) => {
+                const listItem = document.createElement("li");
+                listItem.textContent = name;
+                playerList.appendChild(listItem);
+            });
+        });
+
+        nameButton.addEventListener("click", () => {
+            const name = nameInput.value;
+
+            if (name !== "") {
+                socket.emit("setName", name);
+            }
+        });
+
+        button.addEventListener("click", () => {
+            socket.emit("incrementCounter");
+        });
+    </script>
+
+</body>
+</html>
