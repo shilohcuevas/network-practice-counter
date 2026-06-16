@@ -1,46 +1,151 @@
 const express = require("express");
 const http = require("http");
+const fs = require("fs");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-let count = 0;
+const SAVE_FILE = "players.json";
+
 let players = {};
+let socketToUser = {};
+
+if (fs.existsSync(SAVE_FILE)) {
+    players = JSON.parse(fs.readFileSync(SAVE_FILE));
+}
+
+function savePlayers() {
+    fs.writeFileSync(SAVE_FILE, JSON.stringify(players, null, 2));
+}
+
+function publicPlayers() {
+    const safePlayers = {};
+
+    for (const username in players) {
+        safePlayers[username] = {
+            username: players[username].username,
+            damage: players[username].damage
+        };
+    }
+
+    return safePlayers;
+}
+
+function broadcastPlayers() {
+    io.emit("playersUpdate", publicPlayers());
+}
 
 app.use(express.static("public"));
 
 io.on("connection", (socket) => {
-    console.log("A user connected:", socket.id);
+    console.log("Connected:", socket.id);
 
-    players[socket.id] = "Anonymous";
+    socket.on("register", ({ username, password }) => {
+        if (!username || !password) {
+            socket.emit("authResult", {
+                success: false,
+                message: "Username and password required."
+            });
+            return;
+        }
 
-    io.emit("counterUpdate", count);
-    io.emit("playersUpdate", players);
+        if (players[username]) {
+            socket.emit("authResult", {
+                success: false,
+                message: "Username already exists."
+            });
+            return;
+        }
 
-    socket.on("setName", (name) => {
-        players[socket.id] = name;
+        players[username] = {
+            username: username,
+            password: password,
+            damage: 1
+        };
 
-        console.log("Player name set:", name);
+        savePlayers();
 
-        io.emit("playersUpdate", players);
+        socket.emit("authResult", {
+            success: true,
+            username: username,
+            message: "Account created."
+        });
+
+        broadcastPlayers();
     });
 
-    socket.on("incrementCounter", () => {
-        count++;
+    socket.on("login", ({ username, password }) => {
+        const player = players[username];
 
-        console.log("Counter:", count);
+        if (!player || player.password !== password) {
+            socket.emit("authResult", {
+                success: false,
+                message: "Invalid username or password."
+            });
+            return;
+        }
 
-        io.emit("counterUpdate", count);
+        socketToUser[socket.id] = username;
+
+        socket.emit("authResult", {
+            success: true,
+            username: username,
+            message: "Logged in."
+        });
+
+        socket.emit("playerData", {
+            username: player.username,
+            damage: player.damage
+        });
+
+        broadcastPlayers();
+    });
+
+    socket.on("loadPlayer", (username) => {
+        const player = players[username];
+
+        if (!player) {
+            socket.emit("notLoggedIn");
+            return;
+        }
+
+        socketToUser[socket.id] = username;
+
+        socket.emit("playerData", {
+            username: player.username,
+            damage: player.damage
+        });
+
+        broadcastPlayers();
+    });
+
+    socket.on("trainDamage", () => {
+        const username = socketToUser[socket.id];
+
+        if (!username || !players[username]) return;
+
+        players[username].damage++;
+
+        savePlayers();
+
+        socket.emit("playerData", {
+            username: players[username].username,
+            damage: players[username].damage
+        });
+
+        broadcastPlayers();
+    });
+
+    socket.on("logout", () => {
+        delete socketToUser[socket.id];
+        socket.emit("loggedOut");
     });
 
     socket.on("disconnect", () => {
-        console.log("A user disconnected:", socket.id);
-
-        delete players[socket.id];
-
-        io.emit("playersUpdate", players);
+        console.log("Disconnected:", socket.id);
+        delete socketToUser[socket.id];
     });
 });
 

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Training Grounds</title>
+</head>
+<body>
+
+    <h1>Training Grounds</h1>
+
+    <h2>Your Character</h2>
+    <p id="characterInfo">Loading...</p>
+
+    <button id="trainButton">Train Damage</button>
+
+    <br><br>
+
+    <button onclick="window.location.href='index.html'">
+        Return to Town
+    </button>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+
+        const characterInfo = document.getElementById("characterInfo");
+        const trainButton = document.getElementById("trainButton");
+
+        const username = localStorage.getItem("username");
+
+        if (!username) {
+            window.location.href = "login.html";
+        } else {
+            socket.emit("loadPlayer", username);
+        }
+
+        socket.on("playerData", (player) => {
+            characterInfo.textContent = `${player.username} - Damage: ${player.damage}`;
+        });
+
+        socket.on("notLoggedIn", () => {
+            localStorage.removeItem("username");
+            window.location.href = "login.html";
+        });
+
+        trainButton.addEventListener("click", () => {
+            socket.emit("trainDamage");
+
+            trainButton.disabled = true;
+            trainButton.textContent = "Training...";
+
+            setTimeout(() => {
+                trainButton.disabled = false;
+                trainButton.textContent = "Train Damage";
+            }, 5000);
+        });
+    </script>
+
+</body>
+</html>

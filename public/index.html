@@ -1,68 +1,68 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Networking Practice</title>
+    <title>Town Square</title>
 </head>
 <body>
 
-    <h1>Shared Counter</h1>
+    <h1>Town Square</h1>
 
-    <div>
-        <input id="nameInput" placeholder="Enter your name">
-        <button id="nameButton">Set Name</button>
-    </div>
+    <h2>Your Character</h2>
+    <p id="characterInfo">Loading...</p>
 
-    <h2>Connected Users: <span id="userCount">0</span></h2>
-
-    <h2>Players</h2>
+    <h2>All Players</h2>
     <ul id="playerList"></ul>
 
-    <h2>Counter: <span id="counter">0</span></h2>
+    <button onclick="window.location.href='training.html'">
+        Training Grounds
+    </button>
 
-    <button id="addButton">+1</button>
+    <br><br>
+
+    <button id="logoutButton">Logout</button>
 
     <script src="/socket.io/socket.io.js"></script>
 
     <script>
         const socket = io();
 
-        const counter = document.getElementById("counter");
-        const button = document.getElementById("addButton");
-
-        const nameInput = document.getElementById("nameInput");
-        const nameButton = document.getElementById("nameButton");
-
-        const userCount = document.getElementById("userCount");
+        const characterInfo = document.getElementById("characterInfo");
         const playerList = document.getElementById("playerList");
+        const logoutButton = document.getElementById("logoutButton");
 
-        socket.on("counterUpdate", (count) => {
-            counter.textContent = count;
+        const username = localStorage.getItem("username");
+
+        if (!username) {
+            window.location.href = "login.html";
+        } else {
+            socket.emit("loadPlayer", username);
+        }
+
+        socket.on("playerData", (player) => {
+            characterInfo.textContent = `${player.username} - Damage: ${player.damage}`;
         });
 
         socket.on("playersUpdate", (players) => {
-            const playerNames = Object.values(players);
-
-            userCount.textContent = playerNames.length;
-
             playerList.innerHTML = "";
 
-            playerNames.forEach((name) => {
+            const playerArray = Object.values(players);
+
+            playerArray.forEach((player) => {
                 const listItem = document.createElement("li");
-                listItem.textContent = name;
+                listItem.textContent = `${player.username} - Damage: ${player.damage}`;
                 playerList.appendChild(listItem);
             });
         });
 
-        nameButton.addEventListener("click", () => {
-            const name = nameInput.value;
-
-            if (name !== "") {
-                socket.emit("setName", name);
-            }
+        socket.on("notLoggedIn", () => {
+            localStorage.removeItem("username");
+            window.location.href = "login.html";
         });
 
-        button.addEventListener("click", () => {
-            socket.emit("incrementCounter");
+        logoutButton.addEventListener("click", () => {
+            localStorage.removeItem("username");
+            socket.emit("logout");
+            window.location.href = "login.html";
         });
     </script>
 

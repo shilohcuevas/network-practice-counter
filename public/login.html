@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+</head>
+<body>
+
+    <h1>Login / Register</h1>
+
+    <input id="usernameInput" placeholder="Username">
+    <br><br>
+
+    <input id="passwordInput" placeholder="Password" type="password">
+    <br><br>
+
+    <button id="registerButton">Register</button>
+    <button id="loginButton">Login</button>
+
+    <p id="message"></p>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+
+        const usernameInput = document.getElementById("usernameInput");
+        const passwordInput = document.getElementById("passwordInput");
+        const registerButton = document.getElementById("registerButton");
+        const loginButton = document.getElementById("loginButton");
+        const message = document.getElementById("message");
+
+        registerButton.addEventListener("click", () => {
+            socket.emit("register", {
+                username: usernameInput.value,
+                password: passwordInput.value
+            });
+        });
+
+        loginButton.addEventListener("click", () => {
+            socket.emit("login", {
+                username: usernameInput.value,
+                password: passwordInput.value
+            });
+        });
+
+        socket.on("authResult", (result) => {
+            message.textContent = result.message;
+
+            if (result.success) {
+                localStorage.setItem("username", result.username);
+                window.location.href = "index.html";
+            }
+        });
+    </script>
+
+</body>
+</html>
