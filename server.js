@@ -12,36 +12,53 @@ const SAVE_FILE = "players.json";
 let players = {};
 let socketToUser = {};
 
+// Load saved player data when the server starts
 if (fs.existsSync(SAVE_FILE)) {
     players = JSON.parse(fs.readFileSync(SAVE_FILE));
 }
 
+// Upgrade older accounts with newer fields
+for (const username in players) {
+    if (players[username].money === undefined) {
+        players[username].money = 0;
+    }
+}
+
+// Save upgraded data back into players.json
+savePlayers();
+
+// Save all player data to players.json
 function savePlayers() {
     fs.writeFileSync(SAVE_FILE, JSON.stringify(players, null, 2));
 }
 
+// Return player data without exposing passwords
 function publicPlayers() {
     const safePlayers = {};
 
     for (const username in players) {
         safePlayers[username] = {
             username: players[username].username,
-            damage: players[username].damage
+            damage: players[username].damage,
+            money: players[username].money
         };
     }
 
     return safePlayers;
 }
 
+// Send updated player list to everyone
 function broadcastPlayers() {
     io.emit("playersUpdate", publicPlayers());
 }
 
+// Serve files from the public folder
 app.use(express.static("public"));
 
 io.on("connection", (socket) => {
     console.log("Connected:", socket.id);
 
+    // Register a new account
     socket.on("register", ({ username, password }) => {
         if (!username || !password) {
             socket.emit("authResult", {
@@ -62,7 +79,8 @@ io.on("connection", (socket) => {
         players[username] = {
             username: username,
             password: password,
-            damage: 1
+            damage: 1,
+            money: 0
         };
 
         savePlayers();
@@ -76,6 +94,7 @@ io.on("connection", (socket) => {
         broadcastPlayers();
     });
 
+    // Log into an existing account
     socket.on("login", ({ username, password }) => {
         const player = players[username];
 
@@ -97,12 +116,14 @@ io.on("connection", (socket) => {
 
         socket.emit("playerData", {
             username: player.username,
-            damage: player.damage
+            damage: player.damage,
+            money: player.money
         });
 
         broadcastPlayers();
     });
 
+    // Reload player data when changing pages
     socket.on("loadPlayer", (username) => {
         const player = players[username];
 
@@ -115,12 +136,14 @@ io.on("connection", (socket) => {
 
         socket.emit("playerData", {
             username: player.username,
-            damage: player.damage
+            damage: player.damage,
+            money: player.money
         });
 
         broadcastPlayers();
     });
 
+    // Train damage stat
     socket.on("trainDamage", () => {
         const username = socketToUser[socket.id];
 
@@ -132,17 +155,39 @@ io.on("connection", (socket) => {
 
         socket.emit("playerData", {
             username: players[username].username,
-            damage: players[username].damage
+            damage: players[username].damage,
+            money: players[username].money
         });
 
         broadcastPlayers();
     });
 
+    // Work job to earn money
+    socket.on("workJob", () => {
+        const username = socketToUser[socket.id];
+
+        if (!username || !players[username]) return;
+
+        players[username].money += 10;
+
+        savePlayers();
+
+        socket.emit("playerData", {
+            username: players[username].username,
+            damage: players[username].damage,
+            money: players[username].money
+        });
+
+        broadcastPlayers();
+    });
+
+    // Log out of current socket
     socket.on("logout", () => {
         delete socketToUser[socket.id];
         socket.emit("loggedOut");
     });
 
+    // Clean up socket when user disconnects
     socket.on("disconnect", () => {
         console.log("Disconnected:", socket.id);
         delete socketToUser[socket.id];

@@ -17,6 +17,10 @@
         Training Grounds
     </button>
 
+    <button onclick="window.location.href='work.html'">
+        Work
+    </button>
+
     <br><br>
 
     <button id="logoutButton">Logout</button>
@@ -32,16 +36,20 @@
 
         const username = localStorage.getItem("username");
 
+        // If no username is saved, send player back to login
         if (!username) {
             window.location.href = "login.html";
         } else {
             socket.emit("loadPlayer", username);
         }
 
+        // Display this player's saved character data
         socket.on("playerData", (player) => {
-            characterInfo.textContent = `${player.username} - Damage: ${player.damage}`;
+            characterInfo.textContent =
+                `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
         });
 
+        // Display all players
         socket.on("playersUpdate", (players) => {
             playerList.innerHTML = "";
 
@@ -49,16 +57,19 @@
 
             playerArray.forEach((player) => {
                 const listItem = document.createElement("li");
-                listItem.textContent = `${player.username} - Damage: ${player.damage}`;
+                listItem.textContent =
+                    `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
                 playerList.appendChild(listItem);
             });
         });
 
+        // If account no longer exists, return to login
         socket.on("notLoggedIn", () => {
             localStorage.removeItem("username");
             window.location.href = "login.html";
         });
 
+        // Log out locally and on the server
         logoutButton.addEventListener("click", () => {
             localStorage.removeItem("username");
             socket.emit("logout");

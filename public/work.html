@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Training Grounds</title>
+    <title>Work</title>
 </head>
 <body>
 
-    <h1>Training Grounds</h1>
+    <h1>Work</h1>
 
     <h2>Your Character</h2>
     <p id="characterInfo">Loading...</p>
 
-    <button id="trainButton">Train Damage</button>
+    <button id="workButton">Work Job</button>
 
     <br><br>
 
@@ -24,7 +24,7 @@
         const socket = io();
 
         const characterInfo = document.getElementById("characterInfo");
-        const trainButton = document.getElementById("trainButton");
+        const workButton = document.getElementById("workButton");
 
         const username = localStorage.getItem("username");
 
@@ -47,16 +47,16 @@
             window.location.href = "login.html";
         });
 
-        // Train damage and apply cooldown
-        trainButton.addEventListener("click", () => {
-            socket.emit("trainDamage");
+        // Work job gives money and applies cooldown
+        workButton.addEventListener("click", () => {
+            socket.emit("workJob");
 
-            trainButton.disabled = true;
-            trainButton.textContent = "Training...";
+            workButton.disabled = true;
+            workButton.textContent = "Working...";
 
             setTimeout(() => {
-                trainButton.disabled = false;
-                trainButton.textContent = "Train Damage";
+                workButton.disabled = false;
+                workButton.textContent = "Work Job";
             }, 5000);
         });
     </script>

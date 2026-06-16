@@ -29,6 +29,7 @@
         const loginButton = document.getElementById("loginButton");
         const message = document.getElementById("message");
 
+        // Create new account
         registerButton.addEventListener("click", () => {
             socket.emit("register", {
                 username: usernameInput.value,
@@ -36,6 +37,7 @@
             });
         });
 
+        // Log into existing account
         loginButton.addEventListener("click", () => {
             socket.emit("login", {
                 username: usernameInput.value,
@@ -43,6 +45,7 @@
             });
         });
 
+        // Handle login/register response
         socket.on("authResult", (result) => {
             message.textContent = result.message;
 
