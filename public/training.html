@@ -13,6 +13,9 @@
     <p id="characterInfo">Loading...</p>
 
     <button id="trainButton">Train Damage</button>
+    <button id="trainHealthButton">
+        Train Health
+    </button>
 
     <br><br>
 
@@ -27,6 +30,7 @@
 
         const characterInfo = document.getElementById("characterInfo");
         const trainButton = document.getElementById("trainButton");
+        const trainHealthButton = document.getElementById("trainHealthButton");
 
         const username = localStorage.getItem("username");
 
@@ -40,7 +44,7 @@
         // Display current character stats
         socket.on("playerData", (player) => {
             characterInfo.textContent =
-                `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
+                `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
         });
 
         // Return to login if player is invalid
@@ -59,6 +63,18 @@
             setTimeout(() => {
                 trainButton.disabled = false;
                 trainButton.textContent = "Train Damage";
+            }, 5000);
+        });
+
+        trainHealthButton.addEventListener("click", () => {
+            socket.emit("trainHealth");
+
+            trainHealthButton.disabled = true;
+            trainHealthButton.textContent = "Training...";
+
+            setTimeout(() => {
+                trainHealthButton.disabled = false;
+                trainHealthButton.textContent = "Train Health";
             }, 5000);
         });
     </script>

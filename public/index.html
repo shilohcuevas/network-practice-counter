@@ -63,7 +63,7 @@
         // Display this player's saved character data
         socket.on("playerData", (player) => {
             characterInfo.textContent =
-                `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
+                `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
         });
 
         // Display all players
@@ -75,7 +75,7 @@
             playerArray.forEach((player) => {
                 const listItem = document.createElement("li");
                 listItem.textContent =
-                    `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
+                    `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
                 playerList.appendChild(listItem);
             });
         });

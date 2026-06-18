@@ -2,9 +2,9 @@
   "Epiphonic": {
     "username": "Epiphonic",
     "password": "Patiocruise45_",
-    "damage": 12,
+    "damage": 14,
     "money": 210,
-    "maxHp": 20,
-    "hp": 20
+    "maxHp": 40,
+    "hp": 40
   }
 }

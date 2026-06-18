@@ -174,6 +174,20 @@ io.on("connection", (socket) => {
         broadcastPlayers();
     });
 
+    socket.on("trainHealth", () => {
+        const username = socketToUser[socket.id];
+        if (!username || !players[username]) return;
+
+        const player = players[username];
+
+        player.maxHp += 5;
+        player.hp += 5;
+
+        savePlayers();
+        sendPlayerData(socket, player);
+        broadcastPlayers();
+    });
+
     socket.on("workJob", () => {
         const username = socketToUser[socket.id];
         if (!username || !players[username]) return;

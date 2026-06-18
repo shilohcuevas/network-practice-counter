@@ -40,7 +40,7 @@
         // Display current character stats
         socket.on("playerData", (player) => {
             characterInfo.textContent =
-                `${player.username} - Damage: ${player.damage} - Money: $${player.money}`;
+                `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
         });
 
         // Return to login if player is invalid
