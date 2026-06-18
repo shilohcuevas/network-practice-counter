@@ -1,0 +1,70 @@
+/* Entire page */
+body {
+    background-color: #1a1a1a;
+    color: white;
+    font-family: Arial, sans-serif;
+
+    max-width: 800px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* Main page titles */
+h1 {
+    color: gold;
+}
+
+/* Section headers */
+h2 {
+    border-bottom: 1px solid #444;
+    padding-bottom: 5px;
+}
+
+/* Character information box */
+#characterInfo {
+    background-color: #2b2b2b;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+/* Player list */
+ul {
+    background-color: #2b2b2b;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+li {
+    margin-bottom: 5px;
+}
+
+/* Inputs */
+input {
+    padding: 8px;
+    width: 200px;
+}
+
+/* Buttons */
+button {
+    background-color: #444;
+    color: white;
+
+    border: none;
+    border-radius: 5px;
+
+    padding: 10px 15px;
+    margin: 5px;
+
+    cursor: pointer;
+}
+
+/* Button hover effect */
+button:hover {
+    background-color: #666;
+}
+
+/* Disabled buttons */
+button:disabled {
+    background-color: #222;
+    cursor: not-allowed;
+}

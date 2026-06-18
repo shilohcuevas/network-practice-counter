@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Combat</title>
+</head>
+<body>
+    <h1>Combat Grounds</h1>
+
+    <p id="playerInfo">Loading player...</p>
+
+    <h2 id="enemyName">No enemy</h2>
+    <p id="enemyHp"></p>
+
+    <h3>Choose Enemy</h3>
+
+    <button onclick="startFight('rat')">Fight Rat</button>
+    <button onclick="startFight('dummy')">Fight Training Dummy</button>
+    <button onclick="startFight('goblin')">Fight Goblin</button>
+    <button id="attackButton">Attack</button>
+
+    <h3>Combat Log</h3>
+    <div id="combatLog"></div>
+
+    <br>
+    <a href="index.html">Back to Town</a>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const username = localStorage.getItem("username");
+
+        if (!username) {
+            window.location.href = "index.html";
+        }
+
+        socket.emit("loadPlayer", username);
+
+        socket.on("notLoggedIn", () => {
+            window.location.href = "index.html";
+        });
+
+        socket.on("playerData", (player) => {
+            document.getElementById("playerInfo").textContent =
+                `${player.username} | HP: ${player.hp}/${player.maxHp} | Damage: ${player.damage} | Money: $${player.money}`;
+        });
+
+        function startFight(enemyType) {
+            socket.emit("startFight", enemyType);
+        }
+
+        document.getElementById("attackButton").addEventListener("click", () => {
+            socket.emit("attackEnemy");
+        });
+
+        socket.on("fightUpdate", (fight) => {
+            document.getElementById("enemyName").textContent = fight.enemy.name;
+            document.getElementById("enemyHp").textContent =
+                `Enemy HP: ${fight.enemy.hp}/${fight.enemy.maxHp}`;
+
+            const logBox = document.getElementById("combatLog");
+            logBox.innerHTML = "";
+
+            fight.log.forEach((message) => {
+                const p = document.createElement("p");
+                p.textContent = message;
+                logBox.appendChild(p);
+            });
+        });
+
+        socket.on("combatMessage", (message) => {
+            const logBox = document.getElementById("combatLog");
+            const p = document.createElement("p");
+            p.textContent = message;
+            logBox.appendChild(p);
+        });
+    </script>
+</body>
+</html>

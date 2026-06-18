@@ -11,54 +11,84 @@ const SAVE_FILE = "players.json";
 
 let players = {};
 let socketToUser = {};
+let activeFights = {};
 
-// Load saved player data when the server starts
+const ENEMIES = {
+    rat: {
+        name: "Rat",
+        hp: 5,
+        maxHp: 5,
+        damage: 1,
+        rewardMoney: 3
+    },
+    dummy: {
+        name: "Training Dummy",
+        hp: 10,
+        maxHp: 10,
+        damage: 1,
+        rewardMoney: 5
+    },
+    goblin: {
+        name: "Goblin",
+        hp: 25,
+        maxHp: 25,
+        damage: 3,
+        rewardMoney: 15
+    }
+};
+
+// Load saved player data
 if (fs.existsSync(SAVE_FILE)) {
     players = JSON.parse(fs.readFileSync(SAVE_FILE));
 }
 
-// Upgrade older accounts with newer fields
+// Upgrade older accounts
 for (const username in players) {
-    if (players[username].money === undefined) {
-        players[username].money = 0;
-    }
+    if (players[username].money === undefined) players[username].money = 0;
+    if (players[username].damage === undefined) players[username].damage = 1;
+    if (players[username].maxHp === undefined) players[username].maxHp = 20;
+    if (players[username].hp === undefined) players[username].hp = players[username].maxHp;
 }
 
-// Save upgraded data back into players.json
 savePlayers();
 
-// Save all player data to players.json
 function savePlayers() {
     fs.writeFileSync(SAVE_FILE, JSON.stringify(players, null, 2));
 }
 
-// Return player data without exposing passwords
+function getPublicPlayer(player) {
+    return {
+        username: player.username,
+        damage: player.damage,
+        money: player.money,
+        hp: player.hp,
+        maxHp: player.maxHp
+    };
+}
+
 function publicPlayers() {
     const safePlayers = {};
 
     for (const username in players) {
-        safePlayers[username] = {
-            username: players[username].username,
-            damage: players[username].damage,
-            money: players[username].money
-        };
+        safePlayers[username] = getPublicPlayer(players[username]);
     }
 
     return safePlayers;
 }
 
-// Send updated player list to everyone
+function sendPlayerData(socket, player) {
+    socket.emit("playerData", getPublicPlayer(player));
+}
+
 function broadcastPlayers() {
     io.emit("playersUpdate", publicPlayers());
 }
 
-// Serve files from the public folder
 app.use(express.static("public"));
 
 io.on("connection", (socket) => {
     console.log("Connected:", socket.id);
 
-    // Register a new account
     socket.on("register", ({ username, password }) => {
         if (!username || !password) {
             socket.emit("authResult", {
@@ -77,24 +107,25 @@ io.on("connection", (socket) => {
         }
 
         players[username] = {
-            username: username,
-            password: password,
+            username,
+            password,
             damage: 1,
-            money: 0
+            money: 0,
+            hp: 20,
+            maxHp: 20
         };
 
         savePlayers();
 
         socket.emit("authResult", {
             success: true,
-            username: username,
+            username,
             message: "Account created."
         });
 
         broadcastPlayers();
     });
 
-    // Log into an existing account
     socket.on("login", ({ username, password }) => {
         const player = players[username];
 
@@ -110,20 +141,14 @@ io.on("connection", (socket) => {
 
         socket.emit("authResult", {
             success: true,
-            username: username,
+            username,
             message: "Logged in."
         });
 
-        socket.emit("playerData", {
-            username: player.username,
-            damage: player.damage,
-            money: player.money
-        });
-
+        sendPlayerData(socket, player);
         broadcastPlayers();
     });
 
-    // Reload player data when changing pages
     socket.on("loadPlayer", (username) => {
         const player = players[username];
 
@@ -134,63 +159,118 @@ io.on("connection", (socket) => {
 
         socketToUser[socket.id] = username;
 
-        socket.emit("playerData", {
-            username: player.username,
-            damage: player.damage,
-            money: player.money
-        });
-
+        sendPlayerData(socket, player);
         broadcastPlayers();
     });
 
-    // Train damage stat
     socket.on("trainDamage", () => {
         const username = socketToUser[socket.id];
-
         if (!username || !players[username]) return;
 
         players[username].damage++;
 
         savePlayers();
-
-        socket.emit("playerData", {
-            username: players[username].username,
-            damage: players[username].damage,
-            money: players[username].money
-        });
-
+        sendPlayerData(socket, players[username]);
         broadcastPlayers();
     });
 
-    // Work job to earn money
     socket.on("workJob", () => {
         const username = socketToUser[socket.id];
-
         if (!username || !players[username]) return;
 
         players[username].money += 10;
 
         savePlayers();
-
-        socket.emit("playerData", {
-            username: players[username].username,
-            damage: players[username].damage,
-            money: players[username].money
-        });
-
+        sendPlayerData(socket, players[username]);
         broadcastPlayers();
     });
 
-    // Log out of current socket
+    // Start a simple PvE fight
+    socket.on("startFight", (enemyType) => {
+        const username = socketToUser[socket.id];
+        if (!username || !players[username]) return;
+
+        const enemyTemplate = ENEMIES[enemyType];
+
+        if (!enemyTemplate) {
+            socket.emit("combatMessage", "That enemy does not exist.");
+         return;
+        }
+
+        activeFights[socket.id] = {
+            enemy: { ...enemyTemplate },
+            log: [`A ${enemyTemplate.name} stands before you.`]
+        };
+
+        socket.emit("fightUpdate", activeFights[socket.id]);
+    });
+
+    // Attack the enemy
+    socket.on("attackEnemy", () => {
+        const username = socketToUser[socket.id];
+        if (!username || !players[username]) return;
+
+        const player = players[username];
+        const fight = activeFights[socket.id];
+
+        if (!fight) {
+            socket.emit("combatMessage", "You are not in a fight.");
+            return;
+        }
+
+        const enemy = fight.enemy;
+
+        enemy.hp -= player.damage;
+        fight.log.push(`You hit the ${enemy.name} for ${player.damage} damage.`);
+
+        if (enemy.hp <= 0) {
+            enemy.hp = 0;
+            player.money += enemy.rewardMoney;
+
+            fight.log.push(`You defeated the ${enemy.name}!`);
+            fight.log.push(`You earned $${enemy.rewardMoney}.`);
+
+            savePlayers();
+            sendPlayerData(socket, player);
+            broadcastPlayers();
+
+            socket.emit("fightUpdate", fight);
+            delete activeFights[socket.id];
+            return;
+        }
+
+        player.hp -= enemy.damage;
+        fight.log.push(`The ${enemy.name} hits you for ${enemy.damage} damage.`);
+
+        if (player.hp <= 0) {
+            player.hp = player.maxHp;
+            fight.log.push("You were defeated and returned to full HP.");
+
+            savePlayers();
+            sendPlayerData(socket, player);
+            broadcastPlayers();
+
+            socket.emit("fightUpdate", fight);
+            delete activeFights[socket.id];
+            return;
+        }
+
+        savePlayers();
+        sendPlayerData(socket, player);
+        broadcastPlayers();
+        socket.emit("fightUpdate", fight);
+    });
+
     socket.on("logout", () => {
         delete socketToUser[socket.id];
+        delete activeFights[socket.id];
         socket.emit("loggedOut");
     });
 
-    // Clean up socket when user disconnects
     socket.on("disconnect", () => {
         console.log("Disconnected:", socket.id);
         delete socketToUser[socket.id];
+        delete activeFights[socket.id];
     });
 });
 
