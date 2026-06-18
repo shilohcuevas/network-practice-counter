@@ -18,13 +18,18 @@
     <button onclick="startFight('rat')">Fight Rat</button>
     <button onclick="startFight('dummy')">Fight Training Dummy</button>
     <button onclick="startFight('goblin')">Fight Goblin</button>
+
+    <br><br>
+
     <button id="attackButton">Attack</button>
 
     <h3>Combat Log</h3>
     <div id="combatLog"></div>
 
     <br>
-    <a href="index.html">Back to Town</a>
+    <button onclick="window.location.href='index.html'">
+        Back to Town
+    </button>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -63,7 +68,7 @@
             const logBox = document.getElementById("combatLog");
             logBox.innerHTML = "";
 
-            fight.log.forEach((message) => {
+            fight.log.slice().reverse().forEach((message) => {
                 const p = document.createElement("p");
                 p.textContent = message;
                 logBox.appendChild(p);
@@ -72,9 +77,13 @@
 
         socket.on("combatMessage", (message) => {
             const logBox = document.getElementById("combatLog");
-            const p = document.createElement("p");
-            p.textContent = message;
-            logBox.appendChild(p);
+
+            logBox.innerHTML =
+                `<p>${message}</p>` + logBox.innerHTML;
+
+         while (logBox.children.length > 10) {
+                logBox.removeChild(logBox.lastChild);
+            }
         });
     </script>
 </body>

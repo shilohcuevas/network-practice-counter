@@ -27,6 +27,15 @@
         Combat Grounds
     </button>
 
+    <h2>Inn</h2>
+    <p id="healInfo">Rest and recover HP for $1 per HP.</p>
+
+    <button id="healButton">
+        Heal to Full
+    </button>
+
+<p id="healMessage"></p>
+
     <br><br>
 
     <button id="logoutButton">Logout</button>
@@ -39,6 +48,8 @@
         const characterInfo = document.getElementById("characterInfo");
         const playerList = document.getElementById("playerList");
         const logoutButton = document.getElementById("logoutButton");
+        const healButton = document.getElementById("healButton");
+        const healMessage = document.getElementById("healMessage");
 
         const username = localStorage.getItem("username");
 
@@ -69,6 +80,10 @@
             });
         });
 
+        socket.on("healMessage", (message) => {
+            healMessage.textContent = message;
+        });
+
         // If account no longer exists, return to login
         socket.on("notLoggedIn", () => {
             localStorage.removeItem("username");
@@ -80,6 +95,10 @@
             localStorage.removeItem("username");
             socket.emit("logout");
             window.location.href = "login.html";
+        });
+
+        healButton.addEventListener("click", () => {
+            socket.emit("healPlayer");
         });
     </script>
 

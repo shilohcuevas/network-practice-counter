@@ -185,6 +185,35 @@ io.on("connection", (socket) => {
         broadcastPlayers();
     });
 
+    socket.on("healPlayer", () => {
+    const username = socketToUser[socket.id];
+        if (!username || !players[username]) return;
+
+        const player = players[username];
+
+        const missingHp = player.maxHp - player.hp;
+        const healCost = missingHp;
+
+        if (missingHp <= 0) {
+            socket.emit("healMessage", "You are already at full HP.");
+            return;
+        }
+
+        if (player.money < healCost) {
+        socket.emit("healMessage", `You need $${healCost} to fully heal.`);
+            return;
+        }
+
+        player.money -= healCost;
+        player.hp = player.maxHp;
+
+        savePlayers();
+        sendPlayerData(socket, player);
+        broadcastPlayers();
+
+        socket.emit("healMessage", `You healed ${missingHp} HP for $${healCost}.`);
+    });
+
     // Start a simple PvE fight
     socket.on("startFight", (enemyType) => {
         const username = socketToUser[socket.id];
@@ -222,17 +251,20 @@ io.on("connection", (socket) => {
 
         enemy.hp -= player.damage;
         fight.log.push(`You hit the ${enemy.name} for ${player.damage} damage.`);
-
+        fight.log = fight.log.slice(-10);
         if (enemy.hp <= 0) {
             enemy.hp = 0;
             player.money += enemy.rewardMoney;
 
             fight.log.push(`You defeated the ${enemy.name}!`);
             fight.log.push(`You earned $${enemy.rewardMoney}.`);
+            fight.log = fight.log.slice(-10);
 
             savePlayers();
             sendPlayerData(socket, player);
             broadcastPlayers();
+
+            fight.log = fight.log.slice(-10);
 
             socket.emit("fightUpdate", fight);
             delete activeFights[socket.id];
@@ -245,7 +277,7 @@ io.on("connection", (socket) => {
         if (player.hp <= 0) {
             player.hp = player.maxHp;
             fight.log.push("You were defeated and returned to full HP.");
-
+            fight.log = fight.log.slice(-10);
             savePlayers();
             sendPlayerData(socket, player);
             broadcastPlayers();
