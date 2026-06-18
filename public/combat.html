@@ -15,11 +15,25 @@
 
     <h3>Choose Enemy</h3>
 
-    <button onclick="startFight('rat')">Fight Rat</button>
-    <button onclick="startFight('dummy')">Fight Training Dummy</button>
-    <button onclick="startFight('goblin')">Fight Goblin</button>
+    <div class="enemy-card">
+        <h3>Rat</h3>
+        <p>HP: 5 | Damage: 1 | Reward: $3</p>
+        <button onclick="startFight('rat')">Fight Rat</button>
+    </div>
 
-    <br><br>
+    <div class="enemy-card">
+        <h3>Training Dummy</h3>
+        <p>HP: 10 | Damage: 1 | Reward: $5</p>
+        <button onclick="startFight('dummy')">Fight Training Dummy</button>
+    </div>
+
+    <div class="enemy-card">
+        <h3>Goblin</h3>
+        <p>HP: 25 | Damage: 3 | Reward: $15</p>
+        <button onclick="startFight('goblin')">Fight Goblin</button>
+    </div>
+
+    <br>
 
     <button id="attackButton">Attack</button>
 
