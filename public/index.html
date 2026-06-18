@@ -75,7 +75,7 @@
             playerArray.forEach((player) => {
                 const listItem = document.createElement("li");
                 listItem.textContent =
-                    `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
+                    `${player.username} - HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
                 playerList.appendChild(listItem);
             });
         });
