@@ -1,0 +1,10 @@
+{
+  "ExamplePlayer": {
+    "username": "ExamplePlayer",
+    "password": "development-only-example",
+    "damage": 1,
+    "money": 0,
+    "hp": 20,
+    "maxHp": 20
+  }
+}

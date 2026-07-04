@@ -1,13 +1,16 @@
 const express = require("express");
 const http = require("http");
 const fs = require("fs");
+const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const SAVE_FILE = "players.json";
+const SAVE_FILE = process.env.SAVE_FILE || "players.json";
+
+fs.mkdirSync(path.dirname(SAVE_FILE), { recursive: true });
 
 let players = {};
 let socketToUser = {};
