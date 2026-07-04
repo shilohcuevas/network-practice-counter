@@ -1,20 +1,27 @@
 const express = require("express");
 const http = require("http");
-const fs = require("fs");
 const path = require("path");
 const { Server } = require("socket.io");
+const { PlayerStore } = require("./lib/player-store");
+const { createSessionToken, hashPassword, verifyPassword } = require("./lib/security");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const SAVE_FILE = process.env.SAVE_FILE || "players.json";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const SAVE_FILE = process.env.SAVE_FILE || path.join(__dirname, "players.json");
+const SESSION_COOKIE = "game_session";
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_ATTEMPT_LIMIT = 10;
 
-fs.mkdirSync(path.dirname(SAVE_FILE), { recursive: true });
-
-let players = {};
-let socketToUser = {};
-let activeFights = {};
+const ACTION_COOLDOWNS = {
+    trainDamage: 5000,
+    trainHealth: 5000,
+    workJob: 5000,
+    attackEnemy: 500
+};
 
 const ENEMIES = {
     rat: {
@@ -40,23 +47,49 @@ const ENEMIES = {
     }
 };
 
-// Load saved player data
-if (fs.existsSync(SAVE_FILE)) {
-    players = JSON.parse(fs.readFileSync(SAVE_FILE));
+if (IS_PRODUCTION && !process.env.SAVE_FILE) {
+    throw new Error(
+        "SAVE_FILE is required in production. Configure it beneath a persistent disk mount before starting the game."
+    );
 }
 
-// Upgrade older accounts
+const playerStore = new PlayerStore(SAVE_FILE);
+const players = playerStore.load();
+const sessions = new Map();
+const activeFights = new Map();
+const actionCooldowns = new Map();
+const authAttempts = new Map();
+
+let upgradedOlderAccount = false;
+
 for (const username in players) {
-    if (players[username].money === undefined) players[username].money = 0;
-    if (players[username].damage === undefined) players[username].damage = 1;
-    if (players[username].maxHp === undefined) players[username].maxHp = 20;
-    if (players[username].hp === undefined) players[username].hp = players[username].maxHp;
+    if (players[username].money === undefined) {
+        players[username].money = 0;
+        upgradedOlderAccount = true;
+    }
+
+    if (players[username].damage === undefined) {
+        players[username].damage = 1;
+        upgradedOlderAccount = true;
+    }
+
+    if (players[username].maxHp === undefined) {
+        players[username].maxHp = 20;
+        upgradedOlderAccount = true;
+    }
+
+    if (players[username].hp === undefined) {
+        players[username].hp = players[username].maxHp;
+        upgradedOlderAccount = true;
+    }
 }
 
-savePlayers();
+if (upgradedOlderAccount) {
+    savePlayers();
+}
 
 function savePlayers() {
-    fs.writeFileSync(SAVE_FILE, JSON.stringify(players, null, 2));
+    playerStore.save(players);
 }
 
 function getPublicPlayer(player) {
@@ -87,180 +120,467 @@ function broadcastPlayers() {
     io.emit("playersUpdate", publicPlayers());
 }
 
+function parseCookies(cookieHeader = "") {
+    const cookies = {};
+
+    for (const part of cookieHeader.split(";")) {
+        const separator = part.indexOf("=");
+
+        if (separator === -1) continue;
+
+        const name = part.slice(0, separator).trim();
+        const value = part.slice(separator + 1).trim();
+
+        if (name) {
+            try {
+                cookies[name] = decodeURIComponent(value);
+            } catch {
+                cookies[name] = value;
+            }
+        }
+    }
+
+    return cookies;
+}
+
+function getSession(cookieHeader) {
+    const token = parseCookies(cookieHeader)[SESSION_COOKIE];
+    if (!token) return null;
+
+    const session = sessions.get(token);
+    if (!session) return null;
+
+    if (session.expiresAt <= Date.now()) {
+        sessions.delete(token);
+        return null;
+    }
+
+    return { token, ...session };
+}
+
+function createSession(username) {
+    const token = createSessionToken();
+
+    sessions.set(token, {
+        username,
+        expiresAt: Date.now() + SESSION_DURATION_MS
+    });
+
+    return token;
+}
+
+function sessionCookie(token) {
+    const parts = [
+        `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+        "HttpOnly",
+        "Path=/",
+        "SameSite=Lax",
+        `Max-Age=${Math.floor(SESSION_DURATION_MS / 1000)}`
+    ];
+
+    if (IS_PRODUCTION) parts.push("Secure");
+
+    return parts.join("; ");
+}
+
+function expiredSessionCookie() {
+    const parts = [
+        `${SESSION_COOKIE}=`,
+        "HttpOnly",
+        "Path=/",
+        "SameSite=Lax",
+        "Max-Age=0"
+    ];
+
+    if (IS_PRODUCTION) parts.push("Secure");
+
+    return parts.join("; ");
+}
+
+function consumeAuthAttempt(req) {
+    const key = req.ip;
+    const now = Date.now();
+    let record = authAttempts.get(key);
+
+    if (!record || record.resetAt <= now) {
+        record = { count: 0, resetAt: now + AUTH_WINDOW_MS };
+    }
+
+    record.count++;
+    authAttempts.set(key, record);
+
+    return record.count <= AUTH_ATTEMPT_LIMIT;
+}
+
+function validateRegistration(username, password) {
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+        return "Username must be 3-20 characters using letters, numbers, or underscores.";
+    }
+
+    if (typeof password !== "string" || password.length < 8 || password.length > 128) {
+        return "Password must be 8-128 characters.";
+    }
+
+    return null;
+}
+
+function requireHttpSession(req, res, next) {
+    const session = getSession(req.headers.cookie);
+
+    if (!session || !players[session.username]) {
+        res.status(401).json({ success: false, message: "Authentication required." });
+        return;
+    }
+
+    req.gameSession = session;
+    next();
+}
+
+function getCooldownKey(username, action) {
+    return `${username}:${action}`;
+}
+
+function claimCooldown(username, action) {
+    const duration = ACTION_COOLDOWNS[action] || 0;
+    const key = getCooldownKey(username, action);
+    const now = Date.now();
+    const availableAt = actionCooldowns.get(key) || 0;
+
+    if (availableAt > now) {
+        return availableAt - now;
+    }
+
+    actionCooldowns.set(key, now + duration);
+    return 0;
+}
+
+function clearPlayerRuntimeState(username) {
+    activeFights.delete(username);
+
+    for (const key of actionCooldowns.keys()) {
+        if (key.startsWith(`${username}:`)) {
+            actionCooldowns.delete(key);
+        }
+    }
+}
+
+function reply(callback, payload) {
+    if (typeof callback === "function") {
+        callback(payload);
+    }
+}
+
+function requirePeacefulState(socket, username, callback) {
+    if (!activeFights.has(username)) return true;
+
+    reply(callback, {
+        success: false,
+        message: "Finish or flee from your current fight first."
+    });
+
+    return false;
+}
+
+app.set("trust proxy", IS_PRODUCTION ? 1 : false);
+app.use(express.json({ limit: "10kb" }));
+app.use("/api", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+});
+
+app.post("/api/register", async (req, res) => {
+    if (!consumeAuthAttempt(req)) {
+        res.status(429).json({ success: false, message: "Too many attempts. Try again later." });
+        return;
+    }
+
+    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+    const password = req.body?.password;
+    const validationMessage = validateRegistration(username, password);
+
+    if (validationMessage) {
+        res.status(400).json({ success: false, message: validationMessage });
+        return;
+    }
+
+    if (players[username]) {
+        res.status(409).json({ success: false, message: "Username already exists." });
+        return;
+    }
+
+    players[username] = {
+        username,
+        password: await hashPassword(password),
+        damage: 1,
+        money: 0,
+        hp: 20,
+        maxHp: 20
+    };
+
+    savePlayers();
+    const token = createSession(username);
+
+    res.setHeader("Set-Cookie", sessionCookie(token));
+    res.status(201).json({
+        success: true,
+        username,
+        message: "Account created."
+    });
+
+    broadcastPlayers();
+});
+
+app.post("/api/login", async (req, res) => {
+    if (!consumeAuthAttempt(req)) {
+        res.status(429).json({ success: false, message: "Too many attempts. Try again later." });
+        return;
+    }
+
+    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    const player = players[username];
+
+    if (!player || !password || password.length > 128) {
+        res.status(401).json({ success: false, message: "Invalid username or password." });
+        return;
+    }
+
+    const passwordResult = await verifyPassword(password, player.password);
+
+    if (!passwordResult.valid) {
+        res.status(401).json({ success: false, message: "Invalid username or password." });
+        return;
+    }
+
+    if (passwordResult.needsUpgrade) {
+        player.password = await hashPassword(password);
+        savePlayers();
+        playerStore.refreshBackup();
+    }
+
+    const token = createSession(username);
+    res.setHeader("Set-Cookie", sessionCookie(token));
+    res.json({ success: true, username, message: "Logged in." });
+});
+
+app.get("/api/session", requireHttpSession, (req, res) => {
+    res.json({
+        success: true,
+        player: getPublicPlayer(players[req.gameSession.username])
+    });
+});
+
+app.post("/api/logout", (req, res) => {
+    const session = getSession(req.headers.cookie);
+
+    if (session) {
+        sessions.delete(session.token);
+        clearPlayerRuntimeState(session.username);
+
+        for (const connectedSocket of io.sockets.sockets.values()) {
+            if (connectedSocket.data.username === session.username) {
+                connectedSocket.disconnect(true);
+            }
+        }
+    }
+
+    res.setHeader("Set-Cookie", expiredSessionCookie());
+    res.json({ success: true, message: "Logged out." });
+});
+
 app.use(express.static("public"));
 
+io.use((socket, next) => {
+    const session = getSession(socket.request.headers.cookie);
+
+    if (!session || !players[session.username]) {
+        next(new Error("Authentication required."));
+        return;
+    }
+
+    socket.data.username = session.username;
+    socket.data.sessionToken = session.token;
+    next();
+});
+
 io.on("connection", (socket) => {
-    console.log("Connected:", socket.id);
+    const username = socket.data.username;
+    const player = players[username];
 
-    socket.on("register", ({ username, password }) => {
-        if (!username || !password) {
-            socket.emit("authResult", {
+    console.log("Connected:", socket.id, username);
+    sendPlayerData(socket, player);
+    socket.emit("playersUpdate", publicPlayers());
+
+    if (activeFights.has(username)) {
+        socket.emit("fightUpdate", activeFights.get(username));
+    }
+
+    socket.on("trainDamage", (callback) => {
+        if (!requirePeacefulState(socket, username, callback)) return;
+
+        const remainingMs = claimCooldown(username, "trainDamage");
+
+        if (remainingMs > 0) {
+            reply(callback, {
                 success: false,
-                message: "Username and password required."
+                message: "Damage training is still cooling down.",
+                cooldownMs: remainingMs
             });
             return;
         }
 
-        if (players[username]) {
-            socket.emit("authResult", {
-                success: false,
-                message: "Username already exists."
-            });
-            return;
-        }
-
-        players[username] = {
-            username,
-            password,
-            damage: 1,
-            money: 0,
-            hp: 20,
-            maxHp: 20
-        };
-
+        player.damage++;
         savePlayers();
-
-        socket.emit("authResult", {
-            success: true,
-            username,
-            message: "Account created."
-        });
-
-        broadcastPlayers();
-    });
-
-    socket.on("login", ({ username, password }) => {
-        const player = players[username];
-
-        if (!player || player.password !== password) {
-            socket.emit("authResult", {
-                success: false,
-                message: "Invalid username or password."
-            });
-            return;
-        }
-
-        socketToUser[socket.id] = username;
-
-        socket.emit("authResult", {
-            success: true,
-            username,
-            message: "Logged in."
-        });
-
         sendPlayerData(socket, player);
         broadcastPlayers();
+
+        reply(callback, {
+            success: true,
+            message: "Damage increased by 1.",
+            cooldownMs: ACTION_COOLDOWNS.trainDamage
+        });
     });
 
-    socket.on("loadPlayer", (username) => {
-        const player = players[username];
+    socket.on("trainHealth", (callback) => {
+        if (!requirePeacefulState(socket, username, callback)) return;
 
-        if (!player) {
-            socket.emit("notLoggedIn");
+        const remainingMs = claimCooldown(username, "trainHealth");
+
+        if (remainingMs > 0) {
+            reply(callback, {
+                success: false,
+                message: "Health training is still cooling down.",
+                cooldownMs: remainingMs
+            });
             return;
         }
-
-        socketToUser[socket.id] = username;
-
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-    });
-
-    socket.on("trainDamage", () => {
-        const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
-
-        players[username].damage++;
-
-        savePlayers();
-        sendPlayerData(socket, players[username]);
-        broadcastPlayers();
-    });
-
-    socket.on("trainHealth", () => {
-        const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
-
-        const player = players[username];
 
         player.maxHp += 5;
         player.hp += 5;
-
         savePlayers();
         sendPlayerData(socket, player);
         broadcastPlayers();
+
+        reply(callback, {
+            success: true,
+            message: "Maximum health increased by 5.",
+            cooldownMs: ACTION_COOLDOWNS.trainHealth
+        });
     });
 
-    socket.on("workJob", () => {
-        const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
+    socket.on("workJob", (callback) => {
+        if (!requirePeacefulState(socket, username, callback)) return;
 
-        players[username].money += 10;
+        const remainingMs = claimCooldown(username, "workJob");
 
+        if (remainingMs > 0) {
+            reply(callback, {
+                success: false,
+                message: "You are still recovering from your last job.",
+                cooldownMs: remainingMs
+            });
+            return;
+        }
+
+        player.money += 10;
         savePlayers();
-        sendPlayerData(socket, players[username]);
+        sendPlayerData(socket, player);
         broadcastPlayers();
+
+        reply(callback, {
+            success: true,
+            message: "You earned $10.",
+            cooldownMs: ACTION_COOLDOWNS.workJob
+        });
     });
 
-    socket.on("healPlayer", () => {
-    const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
-
-        const player = players[username];
+    socket.on("healPlayer", (callback) => {
+        if (!requirePeacefulState(socket, username, callback)) return;
 
         const missingHp = player.maxHp - player.hp;
         const healCost = missingHp;
 
         if (missingHp <= 0) {
-            socket.emit("healMessage", "You are already at full HP.");
+            const message = "You are already at full HP.";
+            socket.emit("healMessage", message);
+            reply(callback, { success: false, message });
             return;
         }
 
         if (player.money < healCost) {
-        socket.emit("healMessage", `You need $${healCost} to fully heal.`);
+            const message = `You need $${healCost} to fully heal.`;
+            socket.emit("healMessage", message);
+            reply(callback, { success: false, message });
             return;
         }
 
         player.money -= healCost;
         player.hp = player.maxHp;
-
         savePlayers();
         sendPlayerData(socket, player);
         broadcastPlayers();
 
-        socket.emit("healMessage", `You healed ${missingHp} HP for $${healCost}.`);
+        const message = `You healed ${missingHp} HP for $${healCost}.`;
+        socket.emit("healMessage", message);
+        reply(callback, { success: true, message });
     });
 
-    // Start a simple PvE fight
-    socket.on("startFight", (enemyType) => {
-        const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
+    socket.on("startFight", (enemyType, callback) => {
+        if (activeFights.has(username)) {
+            const message = "You are already in a fight.";
+            socket.emit("combatMessage", message);
+            reply(callback, { success: false, message });
+            return;
+        }
 
         const enemyTemplate = ENEMIES[enemyType];
 
         if (!enemyTemplate) {
-            socket.emit("combatMessage", "That enemy does not exist.");
-         return;
+            const message = "That enemy does not exist.";
+            socket.emit("combatMessage", message);
+            reply(callback, { success: false, message });
+            return;
         }
 
-        activeFights[socket.id] = {
+        const fight = {
             enemy: { ...enemyTemplate },
             log: [`A ${enemyTemplate.name} stands before you.`]
         };
 
-        socket.emit("fightUpdate", activeFights[socket.id]);
+        activeFights.set(username, fight);
+        socket.emit("fightUpdate", fight);
+        reply(callback, { success: true, message: `Fight started against ${enemyTemplate.name}.` });
     });
 
-    // Attack the enemy
-    socket.on("attackEnemy", () => {
-        const username = socketToUser[socket.id];
-        if (!username || !players[username]) return;
+    socket.on("fleeFight", (callback) => {
+        if (!activeFights.has(username)) {
+            reply(callback, { success: false, message: "You are not in a fight." });
+            return;
+        }
 
-        const player = players[username];
-        const fight = activeFights[socket.id];
+        activeFights.delete(username);
+        reply(callback, { success: true, message: "You fled from the fight." });
+        socket.emit("fightEnded", "You fled from the fight.");
+    });
+
+    socket.on("attackEnemy", (callback) => {
+        const fight = activeFights.get(username);
 
         if (!fight) {
-            socket.emit("combatMessage", "You are not in a fight.");
+            const message = "You are not in a fight.";
+            socket.emit("combatMessage", message);
+            reply(callback, { success: false, message });
+            return;
+        }
+
+        const remainingMs = claimCooldown(username, "attackEnemy");
+
+        if (remainingMs > 0) {
+            reply(callback, {
+                success: false,
+                message: "You must wait before attacking again.",
+                cooldownMs: remainingMs
+            });
             return;
         }
 
@@ -269,10 +589,10 @@ io.on("connection", (socket) => {
         enemy.hp -= player.damage;
         fight.log.push(`You hit the ${enemy.name} for ${player.damage} damage.`);
         fight.log = fight.log.slice(-10);
+
         if (enemy.hp <= 0) {
             enemy.hp = 0;
             player.money += enemy.rewardMoney;
-
             fight.log.push(`You defeated the ${enemy.name}!`);
             fight.log.push(`You earned $${enemy.rewardMoney}.`);
             fight.log = fight.log.slice(-10);
@@ -280,11 +600,15 @@ io.on("connection", (socket) => {
             savePlayers();
             sendPlayerData(socket, player);
             broadcastPlayers();
-
-            fight.log = fight.log.slice(-10);
-
             socket.emit("fightUpdate", fight);
-            delete activeFights[socket.id];
+            activeFights.delete(username);
+
+            reply(callback, {
+                success: true,
+                message: `You defeated the ${enemy.name}.`,
+                cooldownMs: ACTION_COOLDOWNS.attackEnemy,
+                fightEnded: true
+            });
             return;
         }
 
@@ -295,12 +619,19 @@ io.on("connection", (socket) => {
             player.hp = player.maxHp;
             fight.log.push("You were defeated and returned to full HP.");
             fight.log = fight.log.slice(-10);
+
             savePlayers();
             sendPlayerData(socket, player);
             broadcastPlayers();
-
             socket.emit("fightUpdate", fight);
-            delete activeFights[socket.id];
+            activeFights.delete(username);
+
+            reply(callback, {
+                success: true,
+                message: "You were defeated.",
+                cooldownMs: ACTION_COOLDOWNS.attackEnemy,
+                fightEnded: true
+            });
             return;
         }
 
@@ -308,18 +639,16 @@ io.on("connection", (socket) => {
         sendPlayerData(socket, player);
         broadcastPlayers();
         socket.emit("fightUpdate", fight);
-    });
 
-    socket.on("logout", () => {
-        delete socketToUser[socket.id];
-        delete activeFights[socket.id];
-        socket.emit("loggedOut");
+        reply(callback, {
+            success: true,
+            message: "Attack completed.",
+            cooldownMs: ACTION_COOLDOWNS.attackEnemy
+        });
     });
 
     socket.on("disconnect", () => {
-        console.log("Disconnected:", socket.id);
-        delete socketToUser[socket.id];
-        delete activeFights[socket.id];
+        console.log("Disconnected:", socket.id, username);
     });
 });
 

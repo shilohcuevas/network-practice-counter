@@ -6,9 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js",
-    "test": "npm run check && npm run test:smoke",
-    "test:smoke": "node tests/smoke.js"
+    "check": "node --check server.js && node --check lib/player-store.js && node --check lib/security.js && node --check tests/smoke.js && node --check tests/integration.js",
+    "test": "npm run check && npm run test:smoke && npm run test:integration",
+    "test:smoke": "node tests/smoke.js",
+    "test:integration": "node tests/integration.js"
   },
   "keywords": [],
   "author": "",
@@ -20,5 +21,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

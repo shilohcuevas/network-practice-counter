@@ -20,41 +20,47 @@
 
     <p id="message"></p>
 
-    <script src="/socket.io/socket.io.js"></script>
-
     <script>
-        const socket = io();
-
         const usernameInput = document.getElementById("usernameInput");
         const passwordInput = document.getElementById("passwordInput");
         const registerButton = document.getElementById("registerButton");
         const loginButton = document.getElementById("loginButton");
         const message = document.getElementById("message");
 
-        // Create new account
-        registerButton.addEventListener("click", () => {
-            socket.emit("register", {
-                username: usernameInput.value,
-                password: passwordInput.value
-            });
-        });
+        async function authenticate(endpoint) {
+            registerButton.disabled = true;
+            loginButton.disabled = true;
+            message.textContent = "Please wait...";
 
-        // Log into existing account
-        loginButton.addEventListener("click", () => {
-            socket.emit("login", {
-                username: usernameInput.value,
-                password: passwordInput.value
-            });
-        });
+            try {
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: usernameInput.value,
+                        password: passwordInput.value
+                    })
+                });
+                const result = await response.json();
 
-        // Handle login/register response
-        socket.on("authResult", (result) => {
-            message.textContent = result.message;
+                message.textContent = result.message;
 
-            if (result.success) {
-                localStorage.setItem("username", result.username);
-                window.location.href = "index.html";
+                if (result.success) {
+                    window.location.href = "index.html";
+                }
+            } catch (error) {
+                message.textContent = "Unable to reach the server.";
+            } finally {
+                registerButton.disabled = false;
+                loginButton.disabled = false;
             }
+        }
+
+        registerButton.addEventListener("click", () => authenticate("/api/register"));
+        loginButton.addEventListener("click", () => authenticate("/api/login"));
+
+        passwordInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") authenticate("/api/login");
         });
     </script>
 

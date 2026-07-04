@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Town Square</title>
+    <title>Combat Grounds</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -36,6 +36,7 @@
     <br>
 
     <button id="attackButton">Attack</button>
+    <button id="fleeButton">Flee</button>
 
     <h3>Combat Log</h3>
     <div id="combatLog"></div>
@@ -49,16 +50,8 @@
     <script>
         const socket = io();
 
-        const username = localStorage.getItem("username");
-
-        if (!username) {
-            window.location.href = "index.html";
-        }
-
-        socket.emit("loadPlayer", username);
-
-        socket.on("notLoggedIn", () => {
-            window.location.href = "index.html";
+        socket.on("connect_error", () => {
+            window.location.href = "login.html";
         });
 
         socket.on("playerData", (player) => {
@@ -71,7 +64,23 @@
         }
 
         document.getElementById("attackButton").addEventListener("click", () => {
-            socket.emit("attackEnemy");
+            const attackButton = document.getElementById("attackButton");
+            attackButton.disabled = true;
+
+            socket.emit("attackEnemy", (result) => {
+                setTimeout(() => {
+                    attackButton.disabled = false;
+                }, result.cooldownMs || 250);
+            });
+        });
+
+        document.getElementById("fleeButton").addEventListener("click", () => {
+            socket.emit("fleeFight", (result) => {
+                if (result.success) {
+                    document.getElementById("enemyName").textContent = "No enemy";
+                    document.getElementById("enemyHp").textContent = "";
+                }
+            });
         });
 
         socket.on("fightUpdate", (fight) => {
@@ -98,6 +107,12 @@
          while (logBox.children.length > 10) {
                 logBox.removeChild(logBox.lastChild);
             }
+        });
+
+        socket.on("fightEnded", (message) => {
+            document.getElementById("enemyName").textContent = "No enemy";
+            document.getElementById("enemyHp").textContent = "";
+            document.getElementById("combatLog").innerHTML = `<p>${message}</p>`;
         });
     </script>
 </body>

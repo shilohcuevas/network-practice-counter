@@ -51,14 +51,9 @@
         const healButton = document.getElementById("healButton");
         const healMessage = document.getElementById("healMessage");
 
-        const username = localStorage.getItem("username");
-
-        // If no username is saved, send player back to login
-        if (!username) {
+        socket.on("connect_error", () => {
             window.location.href = "login.html";
-        } else {
-            socket.emit("loadPlayer", username);
-        }
+        });
 
         // Display this player's saved character data
         socket.on("playerData", (player) => {
@@ -86,14 +81,12 @@
 
         // If account no longer exists, return to login
         socket.on("notLoggedIn", () => {
-            localStorage.removeItem("username");
             window.location.href = "login.html";
         });
 
-        // Log out locally and on the server
-        logoutButton.addEventListener("click", () => {
-            localStorage.removeItem("username");
-            socket.emit("logout");
+        logoutButton.addEventListener("click", async () => {
+            await fetch("/api/logout", { method: "POST" });
+            socket.disconnect();
             window.location.href = "login.html";
         });
 

@@ -14,6 +14,8 @@
 
     <button id="workButton">Work Job</button>
 
+    <p id="workMessage"></p>
+
     <br><br>
 
     <button onclick="window.location.href='index.html'">
@@ -27,15 +29,11 @@
 
         const characterInfo = document.getElementById("characterInfo");
         const workButton = document.getElementById("workButton");
+        const workMessage = document.getElementById("workMessage");
 
-        const username = localStorage.getItem("username");
-
-        // Load same character after page change
-        if (!username) {
+        socket.on("connect_error", () => {
             window.location.href = "login.html";
-        } else {
-            socket.emit("loadPlayer", username);
-        }
+        });
 
         // Display current character stats
         socket.on("playerData", (player) => {
@@ -45,21 +43,20 @@
 
         // Return to login if player is invalid
         socket.on("notLoggedIn", () => {
-            localStorage.removeItem("username");
             window.location.href = "login.html";
         });
 
-        // Work job gives money and applies cooldown
         workButton.addEventListener("click", () => {
-            socket.emit("workJob");
-
             workButton.disabled = true;
             workButton.textContent = "Working...";
+            socket.emit("workJob", (result) => {
+                workMessage.textContent = result.message;
 
-            setTimeout(() => {
-                workButton.disabled = false;
-                workButton.textContent = "Work Job";
-            }, 5000);
+                setTimeout(() => {
+                    workButton.disabled = false;
+                    workButton.textContent = "Work Job";
+                }, result.cooldownMs || 250);
+            });
         });
     </script>
 

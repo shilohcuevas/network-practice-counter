@@ -1,7 +1,7 @@
 {
   "ExamplePlayer": {
     "username": "ExamplePlayer",
-    "password": "development-only-example",
+    "password": "scrypt$example-salt$example-derived-key",
     "damage": 1,
     "money": 0,
     "hp": 20,
