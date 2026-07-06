@@ -20,6 +20,7 @@ Render automatically deploys commits pushed or merged into `main`. Treat `main` 
 - Start command: `npm start`
 - Node version: compatible with `.node-version`
 - Persistent storage: explicitly configured before relying on filesystem saves
+- Health Check Path: `/api/health`
 
 For file-based production storage, attach a disk at `/opt/render/project/src/data` and set `SAVE_FILE=/opt/render/project/src/data/players.json`. Do not deploy the removal of the repository's old save file until existing production data has been backed up and transferred.
 
@@ -30,11 +31,14 @@ The server refuses to start with `NODE_ENV=production` when `SAVE_FILE` is absen
 Before the first deployment of this foundation:
 
 1. Back up the existing production `players.json` and the trusted local copy.
-2. Attach the Render disk at `/opt/render/project/src/data`.
-3. Set `SAVE_FILE=/opt/render/project/src/data/players.json`.
-4. Transfer the chosen current `players.json` onto that disk before opening the game to players.
-5. Keep the service at one instance while using file-backed storage.
-6. Log into each legacy test account once to confirm its plaintext password is replaced by a scrypt hash.
+2. Migrate the trusted save offline with `node scripts/migrate-player-save.js --input <old-save> --output <protected-output>`.
+3. Confirm the migration reports the expected account count and that all tests pass.
+4. Attach the Render disk at `/opt/render/project/src/data`.
+5. Set `SAVE_FILE=/opt/render/project/src/data/players.json`.
+6. Transfer the migrated output to that exact location before opening the game to players.
+7. Keep the service at one instance while using file-backed storage.
+
+The migration utility upgrades legacy fields and hashes plaintext passwords before the save leaves the trusted development machine. Migrated saves and real player data must never be committed to Git.
 
 ## After merging
 

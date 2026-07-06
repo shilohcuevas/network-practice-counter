@@ -387,6 +387,10 @@ app.use("/api", (req, res, next) => {
     next();
 });
 
+app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+});
+
 app.post("/api/register", async (req, res) => {
     if (!consumeAuthAttempt(req)) {
         res.status(429).json({ success: false, message: "Too many attempts. Try again later." });
