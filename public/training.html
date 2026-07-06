@@ -34,6 +34,8 @@
         const trainButton = document.getElementById("trainButton");
         const trainHealthButton = document.getElementById("trainHealthButton");
         const trainingMessage = document.getElementById("trainingMessage");
+        let currentPlayer = null;
+        let gameConfig = null;
 
         socket.on("connect_error", () => {
             window.location.href = "login.html";
@@ -41,8 +43,15 @@
 
         // Display current character stats
         socket.on("playerData", (player) => {
+            currentPlayer = player;
             characterInfo.textContent =
                 `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
+            updateTrainingLabels();
+        });
+
+        socket.on("gameConfig", (config) => {
+            gameConfig = config;
+            updateTrainingLabels();
         });
 
         // Return to login if player is invalid
@@ -50,13 +59,22 @@
             window.location.href = "login.html";
         });
 
-        function applyCooldown(button, label, milliseconds) {
+        function updateTrainingLabels() {
+            if (!currentPlayer || !gameConfig) return;
+
+            const damageCost = currentPlayer.damage * gameConfig.damageTrainingMultiplier;
+            const healthCost = Math.max(1, currentPlayer.maxHp - gameConfig.healthTrainingOffset);
+            trainButton.textContent = `Train Damage ($${damageCost})`;
+            trainHealthButton.textContent = `Train Health ($${healthCost})`;
+        }
+
+        function applyCooldown(button, milliseconds) {
             button.disabled = true;
             button.textContent = "Training...";
 
             setTimeout(() => {
                 button.disabled = false;
-                button.textContent = label;
+                updateTrainingLabels();
             }, milliseconds);
         }
 
@@ -64,7 +82,7 @@
             trainButton.disabled = true;
             socket.emit("trainDamage", (result) => {
                 trainingMessage.textContent = result.message;
-                applyCooldown(trainButton, "Train Damage", result.cooldownMs || 250);
+                applyCooldown(trainButton, result.cooldownMs || 250);
             });
         });
 
@@ -72,7 +90,7 @@
             trainHealthButton.disabled = true;
             socket.emit("trainHealth", (result) => {
                 trainingMessage.textContent = result.message;
-                applyCooldown(trainHealthButton, "Train Health", result.cooldownMs || 250);
+                applyCooldown(trainHealthButton, result.cooldownMs || 250);
             });
         });
     </script>

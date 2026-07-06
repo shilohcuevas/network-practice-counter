@@ -76,4 +76,18 @@ This file-backed setup supports one running game instance. Moving to multiple in
 
 Work, training, and attacks now enforce their cooldowns on the server. Opening another tab or manually sending an event cannot bypass them. A player can have only one active fight, cannot work, train, or heal during that fight, and can use the Flee action to end it.
 
+## Current balance-test rules
+
+The first spreadsheet-derived progression draft is active on `codex-migration`:
+
+- Work earns $5.
+- Damage training costs current damage × $10.
+- Health training adds 5 maximum/current HP and costs current max HP − $10.
+- Healing costs $1 per missing HP.
+- Defeat returns the player with 25% HP.
+- Enemy tiers are Rat, Slime, Goblin, Orc, and Troll.
+- New tiers are purchased sequentially, but suggested damage and HP values are guidance rather than combat requirements.
+
+Existing characters are automatically grandfathered into tiers supported by their current damage and maximum HP. These values are intentionally provisional and should change in response to friend testing and the balance workbook.
+
 See `docs/DEPLOYMENT.md` for the release checklist.

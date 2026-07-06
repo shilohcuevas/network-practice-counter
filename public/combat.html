@@ -14,24 +14,7 @@
     <p id="enemyHp"></p>
 
     <h3>Choose Enemy</h3>
-
-    <div class="enemy-card">
-        <h3>Rat</h3>
-        <p>HP: 5 | Damage: 1 | Reward: $3</p>
-        <button onclick="startFight('rat')">Fight Rat</button>
-    </div>
-
-    <div class="enemy-card">
-        <h3>Training Dummy</h3>
-        <p>HP: 10 | Damage: 1 | Reward: $5</p>
-        <button onclick="startFight('dummy')">Fight Training Dummy</button>
-    </div>
-
-    <div class="enemy-card">
-        <h3>Goblin</h3>
-        <p>HP: 25 | Damage: 3 | Reward: $15</p>
-        <button onclick="startFight('goblin')">Fight Goblin</button>
-    </div>
+    <div id="enemyList">Loading enemies...</div>
 
     <br>
 
@@ -49,18 +32,81 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let gameConfig = null;
+        let currentPlayer = null;
 
         socket.on("connect_error", () => {
             window.location.href = "login.html";
         });
 
         socket.on("playerData", (player) => {
+            currentPlayer = player;
             document.getElementById("playerInfo").textContent =
                 `${player.username} | HP: ${player.hp}/${player.maxHp} | Damage: ${player.damage} | Money: $${player.money}`;
+            renderEnemies();
+        });
+
+        socket.on("gameConfig", (config) => {
+            gameConfig = config;
+            renderEnemies();
         });
 
         function startFight(enemyType) {
             socket.emit("startFight", enemyType);
+        }
+
+        function unlockEnemy(enemyType) {
+            socket.emit("unlockEnemy", enemyType, (result) => {
+                addCombatMessage(result.message);
+            });
+        }
+
+        function addCombatMessage(message) {
+            const logBox = document.getElementById("combatLog");
+            const p = document.createElement("p");
+            p.textContent = message;
+            logBox.prepend(p);
+
+            while (logBox.children.length > 10) {
+                logBox.removeChild(logBox.lastChild);
+            }
+        }
+
+        function renderEnemies() {
+            if (!gameConfig || !currentPlayer) return;
+
+            const enemyList = document.getElementById("enemyList");
+            enemyList.innerHTML = "";
+
+            Object.entries(gameConfig.enemies).forEach(([enemyType, enemy]) => {
+                const unlocked = currentPlayer.unlockedEnemies.includes(enemyType);
+                const recommended = currentPlayer.damage >= enemy.recommendedDamage
+                    && currentPlayer.maxHp >= enemy.recommendedMaxHp;
+                const card = document.createElement("div");
+                card.className = "enemy-card";
+
+                const heading = document.createElement("h3");
+                heading.textContent = enemy.name;
+
+                const stats = document.createElement("p");
+                stats.textContent = `HP: ${enemy.hp} | Damage: ${enemy.damage} | Reward: $${enemy.rewardMoney}`;
+
+                const guidance = document.createElement("p");
+                guidance.textContent = `Suggested: ${enemy.recommendedDamage} damage and ${enemy.recommendedMaxHp} max HP — ${recommended ? "Ready" : "Challenging"}`;
+
+                const button = document.createElement("button");
+
+                if (unlocked) {
+                    button.textContent = `Fight ${enemy.name}`;
+                    button.addEventListener("click", () => startFight(enemyType));
+                } else {
+                    button.textContent = `Unlock ${enemy.name} ($${enemy.unlockCost})`;
+                    button.addEventListener("click", () => unlockEnemy(enemyType));
+                }
+
+                card.append(heading, stats, guidance, button);
+                enemyList.appendChild(card);
+            });
         }
 
         document.getElementById("attackButton").addEventListener("click", () => {
@@ -99,14 +145,7 @@
         });
 
         socket.on("combatMessage", (message) => {
-            const logBox = document.getElementById("combatLog");
-
-            logBox.innerHTML =
-                `<p>${message}</p>` + logBox.innerHTML;
-
-         while (logBox.children.length > 10) {
-                logBox.removeChild(logBox.lastChild);
-            }
+            addCombatMessage(message);
         });
 
         socket.on("fightEnded", (message) => {

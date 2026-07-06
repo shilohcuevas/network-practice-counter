@@ -16,10 +16,10 @@ fs.writeFileSync(saveFile, JSON.stringify({
     LegacyPlayer: {
         username: "LegacyPlayer",
         password: "legacy-password",
-        damage: 1,
-        money: 0,
-        hp: 20,
-        maxHp: 20
+        damage: 4,
+        money: 500,
+        hp: 30,
+        maxHp: 30
     }
 }, null, 2));
 
@@ -79,6 +79,7 @@ async function run() {
         let savedPlayers = JSON.parse(fs.readFileSync(saveFile, "utf8"));
         assert.match(savedPlayers.TestHero.password, /^scrypt\$/);
         assert.notEqual(savedPlayers.TestHero.password, "strong-test-password");
+        assert.deepEqual(savedPlayers.TestHero.unlockedEnemies, ["rat"]);
 
         const legacyLogin = await request(baseUrl, "/api/login", {
             method: "POST",
@@ -87,6 +88,7 @@ async function run() {
         });
 
         assert.equal(legacyLogin.response.status, 200);
+        const legacyCookie = legacyLogin.response.headers.get("set-cookie").split(";", 1)[0];
         savedPlayers = JSON.parse(fs.readFileSync(saveFile, "utf8"));
         assert.match(savedPlayers.LegacyPlayer.password, /^scrypt\$/);
         assert.notEqual(savedPlayers.LegacyPlayer.password, "legacy-password");
@@ -94,6 +96,7 @@ async function run() {
         const backupPlayers = JSON.parse(fs.readFileSync(`${saveFile}.backup`, "utf8"));
         assert.match(backupPlayers.LegacyPlayer.password, /^scrypt\$/);
         assert.notEqual(backupPlayers.LegacyPlayer.password, "legacy-password");
+        assert.deepEqual(savedPlayers.LegacyPlayer.unlockedEnemies, ["rat", "slime", "goblin"]);
 
         const session = await request(baseUrl, "/api/session", {
             headers: { Cookie: cookie }
@@ -115,14 +118,19 @@ async function run() {
 
         authenticatedSocket = io(baseUrl, {
             autoConnect: false,
-            extraHeaders: { Cookie: cookie },
+            extraHeaders: { Cookie: legacyCookie },
             forceNew: true,
             transports: ["websocket"]
         });
 
         const connected = once(authenticatedSocket, "connect");
+        const gameConfigReceived = once(authenticatedSocket, "gameConfig");
         authenticatedSocket.connect();
         await connected;
+        const [gameConfig] = await gameConfigReceived;
+        assert.equal(gameConfig.workReward, 5);
+        assert.equal(gameConfig.enemies.rat.rewardMoney, 8);
+        assert.equal(gameConfig.enemies.troll.recommendedMaxHp, 55);
 
         const firstWork = await emitWithReply(authenticatedSocket, "workJob");
         const immediateSecondWork = await emitWithReply(authenticatedSocket, "workJob");
@@ -134,8 +142,14 @@ async function run() {
         const immediateSecondTraining = await emitWithReply(authenticatedSocket, "trainDamage");
         assert.equal(firstTraining.success, true);
         assert.equal(immediateSecondTraining.success, false);
+        assert.equal(firstTraining.cost, 40);
 
-        const fight = await emitWithReply(authenticatedSocket, "startFight", "rat");
+        const unlockOrc = await emitWithReply(authenticatedSocket, "unlockEnemy", "orc");
+        const unlockOrcAgain = await emitWithReply(authenticatedSocket, "unlockEnemy", "orc");
+        assert.equal(unlockOrc.success, true);
+        assert.equal(unlockOrcAgain.success, false);
+
+        const fight = await emitWithReply(authenticatedSocket, "startFight", "orc");
         const secondFight = await emitWithReply(authenticatedSocket, "startFight", "goblin");
         const workDuringFight = await emitWithReply(authenticatedSocket, "workJob");
         assert.equal(fight.success, true);
@@ -146,19 +160,20 @@ async function run() {
         assert.equal(flee.success, true);
 
         savedPlayers = JSON.parse(fs.readFileSync(saveFile, "utf8"));
-        assert.equal(savedPlayers.TestHero.money, 10);
-        assert.equal(savedPlayers.TestHero.damage, 2);
+        assert.equal(savedPlayers.LegacyPlayer.money, 115);
+        assert.equal(savedPlayers.LegacyPlayer.damage, 5);
+        assert.equal(savedPlayers.LegacyPlayer.unlockedEnemies.includes("orc"), true);
 
         const disconnected = once(authenticatedSocket, "disconnect");
         const logout = await request(baseUrl, "/api/logout", {
             method: "POST",
-            headers: { Cookie: cookie }
+            headers: { Cookie: legacyCookie }
         });
         assert.equal(logout.response.status, 200);
         await disconnected;
 
         const expiredSession = await request(baseUrl, "/api/session", {
-            headers: { Cookie: cookie }
+            headers: { Cookie: legacyCookie }
         });
         assert.equal(expiredSession.response.status, 401);
 

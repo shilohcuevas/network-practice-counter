@@ -15,6 +15,11 @@ const SESSION_COOKIE = "game_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_ATTEMPT_LIMIT = 10;
+const WORK_REWARD = 5;
+const HEAL_COST_PER_HP = 1;
+const DEFEAT_RETURN_HP_PERCENT = 0.25;
+const DAMAGE_TRAINING_MULTIPLIER = 10;
+const HEALTH_TRAINING_OFFSET = 10;
 
 const ACTION_COOLDOWNS = {
     trainDamage: 5000,
@@ -29,21 +34,55 @@ const ENEMIES = {
         hp: 5,
         maxHp: 5,
         damage: 1,
-        rewardMoney: 3
+        rewardMoney: 8,
+        unlockCost: 0,
+        requires: null,
+        recommendedDamage: 1,
+        recommendedMaxHp: 20
     },
-    dummy: {
-        name: "Training Dummy",
-        hp: 10,
-        maxHp: 10,
-        damage: 1,
-        rewardMoney: 5
+    slime: {
+        name: "Slime",
+        hp: 12,
+        maxHp: 12,
+        damage: 2,
+        rewardMoney: 18,
+        unlockCost: 25,
+        requires: "rat",
+        recommendedDamage: 2,
+        recommendedMaxHp: 25
     },
     goblin: {
         name: "Goblin",
         hp: 25,
         maxHp: 25,
         damage: 3,
-        rewardMoney: 15
+        rewardMoney: 35,
+        unlockCost: 100,
+        requires: "slime",
+        recommendedDamage: 4,
+        recommendedMaxHp: 30
+    },
+    orc: {
+        name: "Orc",
+        hp: 50,
+        maxHp: 50,
+        damage: 5,
+        rewardMoney: 70,
+        unlockCost: 350,
+        requires: "goblin",
+        recommendedDamage: 7,
+        recommendedMaxHp: 40
+    },
+    troll: {
+        name: "Troll",
+        hp: 90,
+        maxHp: 90,
+        damage: 8,
+        rewardMoney: 135,
+        unlockCost: 900,
+        requires: "orc",
+        recommendedDamage: 10,
+        recommendedMaxHp: 55
     }
 };
 
@@ -82,6 +121,31 @@ for (const username in players) {
         players[username].hp = players[username].maxHp;
         upgradedOlderAccount = true;
     }
+
+    if (!Array.isArray(players[username].unlockedEnemies)) {
+        players[username].unlockedEnemies = Object.entries(ENEMIES)
+            .filter(([, enemy]) => (
+                players[username].damage >= enemy.recommendedDamage
+                && players[username].maxHp >= enemy.recommendedMaxHp
+            ))
+            .map(([enemyType]) => enemyType);
+
+        if (!players[username].unlockedEnemies.includes("rat")) {
+            players[username].unlockedEnemies.unshift("rat");
+        }
+
+        upgradedOlderAccount = true;
+    }
+
+    const validUnlocks = players[username].unlockedEnemies.filter((enemyType) => ENEMIES[enemyType]);
+
+    if (!validUnlocks.includes("rat")) validUnlocks.unshift("rat");
+
+    if (validUnlocks.length !== players[username].unlockedEnemies.length
+        || validUnlocks.some((enemyType, index) => enemyType !== players[username].unlockedEnemies[index])) {
+        players[username].unlockedEnemies = validUnlocks;
+        upgradedOlderAccount = true;
+    }
 }
 
 if (upgradedOlderAccount) {
@@ -98,8 +162,43 @@ function getPublicPlayer(player) {
         damage: player.damage,
         money: player.money,
         hp: player.hp,
-        maxHp: player.maxHp
+        maxHp: player.maxHp,
+        unlockedEnemies: [...player.unlockedEnemies]
     };
+}
+
+function getPublicGameConfig() {
+    const enemies = {};
+
+    for (const [enemyType, enemy] of Object.entries(ENEMIES)) {
+        enemies[enemyType] = {
+            name: enemy.name,
+            hp: enemy.maxHp,
+            damage: enemy.damage,
+            rewardMoney: enemy.rewardMoney,
+            unlockCost: enemy.unlockCost,
+            requires: enemy.requires,
+            recommendedDamage: enemy.recommendedDamage,
+            recommendedMaxHp: enemy.recommendedMaxHp
+        };
+    }
+
+    return {
+        enemies,
+        workReward: WORK_REWARD,
+        healCostPerHp: HEAL_COST_PER_HP,
+        defeatReturnHpPercent: DEFEAT_RETURN_HP_PERCENT,
+        damageTrainingMultiplier: DAMAGE_TRAINING_MULTIPLIER,
+        healthTrainingOffset: HEALTH_TRAINING_OFFSET
+    };
+}
+
+function getDamageTrainingCost(player) {
+    return player.damage * DAMAGE_TRAINING_MULTIPLIER;
+}
+
+function getHealthTrainingCost(player) {
+    return Math.max(1, player.maxHp - HEALTH_TRAINING_OFFSET);
 }
 
 function publicPlayers() {
@@ -314,7 +413,8 @@ app.post("/api/register", async (req, res) => {
         damage: 1,
         money: 0,
         hp: 20,
-        maxHp: 20
+        maxHp: 20,
+        unlockedEnemies: ["rat"]
     };
 
     savePlayers();
@@ -410,6 +510,7 @@ io.on("connection", (socket) => {
     console.log("Connected:", socket.id, username);
     sendPlayerData(socket, player);
     socket.emit("playersUpdate", publicPlayers());
+    socket.emit("gameConfig", getPublicGameConfig());
 
     if (activeFights.has(username)) {
         socket.emit("fightUpdate", activeFights.get(username));
@@ -417,6 +518,17 @@ io.on("connection", (socket) => {
 
     socket.on("trainDamage", (callback) => {
         if (!requirePeacefulState(socket, username, callback)) return;
+
+        const cost = getDamageTrainingCost(player);
+
+        if (player.money < cost) {
+            reply(callback, {
+                success: false,
+                message: `Damage training costs $${cost}.`,
+                cost
+            });
+            return;
+        }
 
         const remainingMs = claimCooldown(username, "trainDamage");
 
@@ -429,6 +541,7 @@ io.on("connection", (socket) => {
             return;
         }
 
+        player.money -= cost;
         player.damage++;
         savePlayers();
         sendPlayerData(socket, player);
@@ -436,13 +549,25 @@ io.on("connection", (socket) => {
 
         reply(callback, {
             success: true,
-            message: "Damage increased by 1.",
+            message: `Damage increased by 1 for $${cost}.`,
+            cost,
             cooldownMs: ACTION_COOLDOWNS.trainDamage
         });
     });
 
     socket.on("trainHealth", (callback) => {
         if (!requirePeacefulState(socket, username, callback)) return;
+
+        const cost = getHealthTrainingCost(player);
+
+        if (player.money < cost) {
+            reply(callback, {
+                success: false,
+                message: `Health training costs $${cost}.`,
+                cost
+            });
+            return;
+        }
 
         const remainingMs = claimCooldown(username, "trainHealth");
 
@@ -455,6 +580,7 @@ io.on("connection", (socket) => {
             return;
         }
 
+        player.money -= cost;
         player.maxHp += 5;
         player.hp += 5;
         savePlayers();
@@ -463,7 +589,8 @@ io.on("connection", (socket) => {
 
         reply(callback, {
             success: true,
-            message: "Maximum health increased by 5.",
+            message: `Maximum health increased by 5 for $${cost}.`,
+            cost,
             cooldownMs: ACTION_COOLDOWNS.trainHealth
         });
     });
@@ -482,14 +609,15 @@ io.on("connection", (socket) => {
             return;
         }
 
-        player.money += 10;
+        player.money += WORK_REWARD;
         savePlayers();
         sendPlayerData(socket, player);
         broadcastPlayers();
 
         reply(callback, {
             success: true,
-            message: "You earned $10.",
+            message: `You earned $${WORK_REWARD}.`,
+            reward: WORK_REWARD,
             cooldownMs: ACTION_COOLDOWNS.workJob
         });
     });
@@ -498,7 +626,7 @@ io.on("connection", (socket) => {
         if (!requirePeacefulState(socket, username, callback)) return;
 
         const missingHp = player.maxHp - player.hp;
-        const healCost = missingHp;
+        const healCost = missingHp * HEAL_COST_PER_HP;
 
         if (missingHp <= 0) {
             const message = "You are already at full HP.";
@@ -542,6 +670,13 @@ io.on("connection", (socket) => {
             return;
         }
 
+        if (!player.unlockedEnemies.includes(enemyType)) {
+            const message = `${enemyTemplate.name} is still locked.`;
+            socket.emit("combatMessage", message);
+            reply(callback, { success: false, message });
+            return;
+        }
+
         const fight = {
             enemy: { ...enemyTemplate },
             log: [`A ${enemyTemplate.name} stands before you.`]
@@ -550,6 +685,49 @@ io.on("connection", (socket) => {
         activeFights.set(username, fight);
         socket.emit("fightUpdate", fight);
         reply(callback, { success: true, message: `Fight started against ${enemyTemplate.name}.` });
+    });
+
+    socket.on("unlockEnemy", (enemyType, callback) => {
+        if (!requirePeacefulState(socket, username, callback)) return;
+
+        const enemy = ENEMIES[enemyType];
+
+        if (!enemy) {
+            reply(callback, { success: false, message: "That enemy does not exist." });
+            return;
+        }
+
+        if (player.unlockedEnemies.includes(enemyType)) {
+            reply(callback, { success: false, message: `${enemy.name} is already unlocked.` });
+            return;
+        }
+
+        if (enemy.requires && !player.unlockedEnemies.includes(enemy.requires)) {
+            reply(callback, {
+                success: false,
+                message: `Unlock ${ENEMIES[enemy.requires].name} first.`
+            });
+            return;
+        }
+
+        if (player.money < enemy.unlockCost) {
+            reply(callback, {
+                success: false,
+                message: `You need $${enemy.unlockCost} to unlock ${enemy.name}.`
+            });
+            return;
+        }
+
+        player.money -= enemy.unlockCost;
+        player.unlockedEnemies.push(enemyType);
+        savePlayers();
+        sendPlayerData(socket, player);
+        broadcastPlayers();
+
+        reply(callback, {
+            success: true,
+            message: `${enemy.name} unlocked for $${enemy.unlockCost}.`
+        });
     });
 
     socket.on("fleeFight", (callback) => {
@@ -616,8 +794,8 @@ io.on("connection", (socket) => {
         fight.log.push(`The ${enemy.name} hits you for ${enemy.damage} damage.`);
 
         if (player.hp <= 0) {
-            player.hp = player.maxHp;
-            fight.log.push("You were defeated and returned to full HP.");
+            player.hp = Math.max(1, Math.ceil(player.maxHp * DEFEAT_RETURN_HP_PERCENT));
+            fight.log.push(`You were defeated and returned with ${player.hp} HP.`);
             fight.log = fight.log.slice(-10);
 
             savePlayers();

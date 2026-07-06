@@ -79,6 +79,12 @@
             healMessage.textContent = message;
         });
 
+        socket.on("gameConfig", (config) => {
+            const defeatPercent = Math.round(config.defeatReturnHpPercent * 100);
+            document.getElementById("healInfo").textContent =
+                `Rest for $${config.healCostPerHp} per missing HP. Defeat returns you with ${defeatPercent}% HP.`;
+        });
+
         // If account no longer exists, return to login
         socket.on("notLoggedIn", () => {
             window.location.href = "login.html";

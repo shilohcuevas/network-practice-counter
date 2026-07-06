@@ -29,6 +29,7 @@ The server uses `PORT` when supplied by the host and otherwise uses port 3000.
 - Preserve HttpOnly cookie authentication; never reintroduce username-based client trust or localStorage authentication.
 - Treat the current storage and in-memory sessions as a single-instance architecture.
 - Do not change gameplay balance, saved-player migrations, GitHub configuration, or Render deployment behavior unless the user requests it.
+- Keep spreadsheet-derived economy constants together near the top of `server.js`, and update integration tests when adjusting them.
 - Keep changes small and explain them in player-facing language.
 - Work on `codex-migration`; treat `main` as the Render production branch.
 - Do not merge into `main` until durable production player storage is confirmed.

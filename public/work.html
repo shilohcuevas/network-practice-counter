@@ -30,6 +30,7 @@
         const characterInfo = document.getElementById("characterInfo");
         const workButton = document.getElementById("workButton");
         const workMessage = document.getElementById("workMessage");
+        let workReward = 0;
 
         socket.on("connect_error", () => {
             window.location.href = "login.html";
@@ -46,6 +47,11 @@
             window.location.href = "login.html";
         });
 
+        socket.on("gameConfig", (config) => {
+            workReward = config.workReward;
+            workButton.textContent = `Work Job (+$${workReward})`;
+        });
+
         workButton.addEventListener("click", () => {
             workButton.disabled = true;
             workButton.textContent = "Working...";
@@ -54,7 +60,7 @@
 
                 setTimeout(() => {
                     workButton.disabled = false;
-                    workButton.textContent = "Work Job";
+                    workButton.textContent = `Work Job (+$${workReward})`;
                 }, result.cooldownMs || 250);
             });
         });

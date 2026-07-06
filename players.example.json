@@ -5,6 +5,7 @@
     "damage": 1,
     "money": 0,
     "hp": 20,
-    "maxHp": 20
+    "maxHp": 20,
+    "unlockedEnemies": ["rat"]
   }
 }
