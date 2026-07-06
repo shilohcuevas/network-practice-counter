@@ -20,8 +20,11 @@
 
     <br>
 
-    <button id="attackButton">Attack</button>
-    <button id="fleeButton">Flee</button>
+    <div id="combatActions" hidden>
+        <button id="attackButton">Attack</button>
+        <button id="fleeButton">Flee</button>
+    </div>
+    <button id="returnToEnemiesButton" hidden>Choose Another Enemy</button>
 
     <h3>Combat Log</h3>
     <div id="combatLog"></div>
@@ -74,8 +77,24 @@
             }
         }
 
-        function setFightActive(isActive) {
-            document.getElementById("enemySelection").hidden = isActive;
+        function showEnemySelection() {
+            document.getElementById("enemySelection").hidden = false;
+            document.getElementById("combatActions").hidden = true;
+            document.getElementById("returnToEnemiesButton").hidden = true;
+            document.getElementById("enemyName").textContent = "No enemy";
+            document.getElementById("enemyHp").textContent = "";
+        }
+
+        function showActiveFight() {
+            document.getElementById("enemySelection").hidden = true;
+            document.getElementById("combatActions").hidden = false;
+            document.getElementById("returnToEnemiesButton").hidden = true;
+        }
+
+        function showFightResult() {
+            document.getElementById("enemySelection").hidden = true;
+            document.getElementById("combatActions").hidden = true;
+            document.getElementById("returnToEnemiesButton").hidden = false;
         }
 
         function renderEnemies() {
@@ -120,6 +139,10 @@
             attackButton.disabled = true;
 
             socket.emit("attackEnemy", (result) => {
+                if (result.fightEnded) {
+                    showFightResult();
+                }
+
                 setTimeout(() => {
                     attackButton.disabled = false;
                 }, result.cooldownMs || 250);
@@ -129,14 +152,17 @@
         document.getElementById("fleeButton").addEventListener("click", () => {
             socket.emit("fleeFight", (result) => {
                 if (result.success) {
-                    document.getElementById("enemyName").textContent = "No enemy";
-                    document.getElementById("enemyHp").textContent = "";
+                    showEnemySelection();
                 }
             });
         });
 
+        document.getElementById("returnToEnemiesButton").addEventListener("click", () => {
+            showEnemySelection();
+        });
+
         socket.on("fightUpdate", (fight) => {
-            setFightActive(true);
+            showActiveFight();
             document.getElementById("enemyName").textContent = fight.enemy.name;
             document.getElementById("enemyHp").textContent =
                 `Enemy HP: ${fight.enemy.hp}/${fight.enemy.maxHp}`;
@@ -156,10 +182,9 @@
         });
 
         socket.on("fightEnded", (message) => {
-            setFightActive(false);
-            document.getElementById("enemyName").textContent = "No enemy";
-            document.getElementById("enemyHp").textContent = "";
-            document.getElementById("combatLog").innerHTML = `<p>${message}</p>`;
+            showEnemySelection();
+            document.getElementById("combatLog").innerHTML = "";
+            addCombatMessage(message);
         });
     </script>
 </body>
