@@ -1,17 +1,28 @@
 {
   "name": "networkingpractice",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "A small persistent browser RPG built with Express and Socket.IO.",
+  "private": true,
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "check": "node --check server.js && node --check lib/player-store.js && node --check lib/security.js && node --check tests/smoke.js && node --check tests/integration.js",
+    "test": "npm run check && npm run test:smoke && npm run test:integration",
+    "test:smoke": "node tests/smoke.js",
+    "test:integration": "node tests/integration.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=24.14.0 <25.0.0"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

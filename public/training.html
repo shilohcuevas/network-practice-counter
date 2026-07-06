@@ -17,6 +17,8 @@
         Train Health
     </button>
 
+    <p id="trainingMessage"></p>
+
     <br><br>
 
     <button onclick="window.location.href='index.html'">
@@ -31,51 +33,65 @@
         const characterInfo = document.getElementById("characterInfo");
         const trainButton = document.getElementById("trainButton");
         const trainHealthButton = document.getElementById("trainHealthButton");
+        const trainingMessage = document.getElementById("trainingMessage");
+        let currentPlayer = null;
+        let gameConfig = null;
 
-        const username = localStorage.getItem("username");
-
-        // Load same character after page change
-        if (!username) {
+        socket.on("connect_error", () => {
             window.location.href = "login.html";
-        } else {
-            socket.emit("loadPlayer", username);
-        }
+        });
 
         // Display current character stats
         socket.on("playerData", (player) => {
+            currentPlayer = player;
             characterInfo.textContent =
                 `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
+            updateTrainingLabels();
+        });
+
+        socket.on("gameConfig", (config) => {
+            gameConfig = config;
+            updateTrainingLabels();
         });
 
         // Return to login if player is invalid
         socket.on("notLoggedIn", () => {
-            localStorage.removeItem("username");
             window.location.href = "login.html";
         });
 
-        // Train damage and apply cooldown
-        trainButton.addEventListener("click", () => {
-            socket.emit("trainDamage");
+        function updateTrainingLabels() {
+            if (!currentPlayer || !gameConfig) return;
 
-            trainButton.disabled = true;
-            trainButton.textContent = "Training...";
+            const damageCost = currentPlayer.damage * gameConfig.damageTrainingMultiplier;
+            const healthCost = Math.max(1, currentPlayer.maxHp - gameConfig.healthTrainingOffset);
+            trainButton.textContent = `Train Damage ($${damageCost})`;
+            trainHealthButton.textContent = `Train Health ($${healthCost})`;
+        }
+
+        function applyCooldown(button, milliseconds) {
+            button.disabled = true;
+            button.textContent = "Training...";
 
             setTimeout(() => {
-                trainButton.disabled = false;
-                trainButton.textContent = "Train Damage";
-            }, 5000);
+                button.disabled = false;
+                updateTrainingLabels();
+            }, milliseconds);
+        }
+
+        trainButton.addEventListener("click", () => {
+            trainButton.disabled = true;
+            socket.emit("trainDamage", (result) => {
+                trainingMessage.textContent = result.message;
+                applyCooldown(trainButton, result.cooldownMs || 250);
+            });
         });
 
         trainHealthButton.addEventListener("click", () => {
-            socket.emit("trainHealth");
-
             trainHealthButton.disabled = true;
-            trainHealthButton.textContent = "Training...";
-
-            setTimeout(() => {
-                trainHealthButton.disabled = false;
-                trainHealthButton.textContent = "Train Health";
-            }, 5000);
+            socket.emit("trainHealth", (result) => {
+                trainingMessage.textContent = result.message;
+                applyCooldown(trainHealthButton, result.cooldownMs || 250);
+            });
         });
     </script>
 

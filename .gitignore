@@ -1,0 +1,15 @@
+# Runtime player data contains account credentials and must remain local.
+players.json*
+*.backup
+*.tmp
+
+# Local secrets and environment settings.
+.env
+.env.*
+!.env.example
+
+# Runtime logs.
+*.log
+
+# Installed dependencies are recreated from package-lock.json.
+node_modules/
