@@ -27,6 +27,8 @@ const paths = [
     "/work.html",
     "/combat.html",
     "/style.css",
+    "/character-sheet.js",
+    "/images/town-background.png",
     "/socket.io/socket.io.js"
 ];
 
@@ -41,7 +43,17 @@ async function run() {
         for (const path of paths) {
             const response = await fetch(`http://127.0.0.1:${port}${path}`);
             assert.equal(response.status, 200, `${path} should load successfully`);
-            await response.arrayBuffer();
+            const body = await response.text();
+
+            if (path === "/combat.html") {
+                assert.equal(body.includes("Choose Another Enemy"), true);
+                assert.match(body, /<section id="currentFightPanel" class="journal-card" hidden>/);
+            }
+
+            if (path === "/character-sheet.js") {
+                assert.equal(body.includes("\"Damage\""), false);
+                assert.equal(body.includes("\"Accuracy\""), false);
+            }
         }
 
         console.log(`Smoke test passed for ${paths.length} public assets.`);

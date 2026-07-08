@@ -16,18 +16,23 @@
         <div class="menu-frame">
             <aside class="side-panel">
                 <section class="panel-section">
-                    <h2>Your Character</h2>
-                    <p id="characterInfo" class="stat-card">Loading...</p>
+                    <div id="characterInfo" class="stat-card">Loading...</div>
                 </section>
 
                 <section class="panel-section">
                     <h2>Travel</h2>
                     <nav class="nav-list" aria-label="Game areas">
                         <button class="nav-button" onclick="window.location.href='index.html'">Town</button>
-                        <button class="nav-button" onclick="window.location.href='training.html'">Training</button>
-                        <button class="nav-button active" onclick="window.location.href='work.html'">Work</button>
-                        <button class="nav-button" onclick="window.location.href='combat.html'">Combat</button>
                     </nav>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Notice Board</h2>
+                    <ul class="notice-list">
+                        <li>Welcome to town.</li>
+                        <li>Train, work, and fight to grow stronger.</li>
+                        <li>More notices will appear here soon.</li>
+                    </ul>
                 </section>
 
                 <button id="logoutButton" class="danger-button">Logout</button>
@@ -46,6 +51,7 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="character-sheet.js"></script>
 
     <script>
         const socket = io();
@@ -62,8 +68,7 @@
 
         // Display current character stats
         socket.on("playerData", (player) => {
-            characterInfo.textContent =
-                `HP: ${player.hp}/${player.maxHp} - Damage: ${player.damage} - Money: $${player.money}`;
+            renderCharacterSheet(characterInfo, player);
         });
 
         // Return to login if player is invalid
