@@ -6,39 +6,74 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="game-shell">
+        <header class="game-header">
+            <p class="eyebrow">Adventurer's Journal</p>
+            <h1>Town Square</h1>
+            <p class="subtitle">Choose your next stop, recover at the inn, or check who else is roaming the world.</p>
+        </header>
 
-    <h1>Town Square</h1>
+        <div class="menu-frame">
+            <aside class="side-panel">
+                <section class="panel-section">
+                    <h2>Your Character</h2>
+                    <p id="characterInfo" class="stat-card">Loading...</p>
+                </section>
 
-    <h2>Your Character</h2>
-    <p id="characterInfo">Loading...</p>
+                <section class="panel-section">
+                    <h2>Travel</h2>
+                    <nav class="nav-list" aria-label="Game areas">
+                        <button class="nav-button active" onclick="window.location.href='index.html'">Town</button>
+                        <button class="nav-button" onclick="window.location.href='training.html'">Training</button>
+                        <button class="nav-button" onclick="window.location.href='work.html'">Work</button>
+                        <button class="nav-button" onclick="window.location.href='combat.html'">Combat</button>
+                    </nav>
+                </section>
 
-    <h2>All Players</h2>
-    <ul id="playerList"></ul>
+                <section class="panel-section">
+                    <h2>All Players</h2>
+                    <ul id="playerList" class="online-list">
+                        <li class="empty-state">Waiting for adventurers...</li>
+                    </ul>
+                </section>
 
-    <button onclick="window.location.href='training.html'">
-        Training Grounds
-    </button>
+                <button id="logoutButton" class="danger-button">Logout</button>
+            </aside>
 
-    <button onclick="window.location.href='work.html'">
-        Work
-    </button>
+            <main class="main-panel">
+                <section class="journal-card">
+                    <h2>Town Menu</h2>
+                    <p class="journal-lede">The town square is your safe place between jobs, training, and combat.</p>
+                    <div class="action-grid">
+                        <article class="action-card">
+                            <h3>Training Grounds</h3>
+                            <p>Spend money to improve damage or maximum HP.</p>
+                            <button class="action-button" onclick="window.location.href='training.html'">Train</button>
+                        </article>
 
-    <button onclick="window.location.href='combat.html'">
-        Combat Grounds
-    </button>
+                        <article class="action-card">
+                            <h3>Work Board</h3>
+                            <p>Take a quick job when you need reliable money.</p>
+                            <button class="action-button" onclick="window.location.href='work.html'">Work</button>
+                        </article>
 
-    <h2>Inn</h2>
-    <p id="healInfo">Rest and recover HP for $1 per HP.</p>
+                        <article class="action-card">
+                            <h3>Combat Grounds</h3>
+                            <p>Fight unlocked enemies for bigger rewards.</p>
+                            <button class="action-button" onclick="window.location.href='combat.html'">Fight</button>
+                        </article>
+                    </div>
+                </section>
 
-    <button id="healButton">
-        Heal to Full
-    </button>
-
-<p id="healMessage"></p>
-
-    <br><br>
-
-    <button id="logoutButton">Logout</button>
+                <section class="journal-card">
+                    <h2>Inn</h2>
+                    <p id="healInfo">Rest and recover HP for $1 per HP.</p>
+                    <button id="healButton" class="action-button">Heal to Full</button>
+                    <p id="healMessage" class="message"></p>
+                </section>
+            </main>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
 
@@ -66,6 +101,14 @@
             playerList.innerHTML = "";
 
             const playerArray = Object.values(players);
+
+            if (playerArray.length === 0) {
+                const listItem = document.createElement("li");
+                listItem.className = "empty-state";
+                listItem.textContent = "No adventurers are online.";
+                playerList.appendChild(listItem);
+                return;
+            }
 
             playerArray.forEach((player) => {
                 const listItem = document.createElement("li");

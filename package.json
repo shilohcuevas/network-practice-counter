@@ -6,10 +6,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/player-store.js && node --check lib/security.js && node --check tests/smoke.js && node --check tests/integration.js",
-    "test": "npm run check && npm run test:smoke && npm run test:integration",
+    "check": "node --check server.js && node --check lib/player-store.js && node --check lib/security.js && node --check scripts/migrate-player-save.js && node --check tests/smoke.js && node --check tests/integration.js && node --check tests/migration.js",
+    "test": "npm run check && npm run test:smoke && npm run test:integration && npm run test:migration",
     "test:smoke": "node tests/smoke.js",
-    "test:integration": "node tests/integration.js"
+    "test:integration": "node tests/integration.js",
+    "test:migration": "node tests/migration.js"
   },
   "keywords": [],
   "author": "",

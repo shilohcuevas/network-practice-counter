@@ -20,6 +20,7 @@ process.env.SAVE_FILE = path.join(testDirectory, "players.json");
 require("../server.js");
 
 const paths = [
+    "/api/health",
     "/login.html",
     "/index.html",
     "/training.html",

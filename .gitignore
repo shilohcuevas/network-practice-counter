@@ -1,5 +1,6 @@
 # Runtime player data contains account credentials and must remain local.
 players.json*
+*.migrated.json
 *.backup
 *.tmp
 
