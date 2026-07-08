@@ -79,6 +79,8 @@ async function run() {
         let savedPlayers = JSON.parse(fs.readFileSync(saveFile, "utf8"));
         assert.match(savedPlayers.TestHero.password, /^scrypt\$/);
         assert.notEqual(savedPlayers.TestHero.password, "strong-test-password");
+        assert.equal(savedPlayers.TestHero.level, 1);
+        assert.equal(savedPlayers.TestHero.accuracy, 75);
         assert.deepEqual(savedPlayers.TestHero.unlockedEnemies, ["rat"]);
 
         const legacyLogin = await request(baseUrl, "/api/login", {
@@ -92,6 +94,8 @@ async function run() {
         savedPlayers = JSON.parse(fs.readFileSync(saveFile, "utf8"));
         assert.match(savedPlayers.LegacyPlayer.password, /^scrypt\$/);
         assert.notEqual(savedPlayers.LegacyPlayer.password, "legacy-password");
+        assert.equal(savedPlayers.LegacyPlayer.level, 1);
+        assert.equal(savedPlayers.LegacyPlayer.accuracy, 75);
         assert.equal(fs.existsSync(`${saveFile}.backup`), true);
         const backupPlayers = JSON.parse(fs.readFileSync(`${saveFile}.backup`, "utf8"));
         assert.match(backupPlayers.LegacyPlayer.password, /^scrypt\$/);
@@ -104,6 +108,9 @@ async function run() {
 
         assert.equal(session.response.status, 200);
         assert.equal(session.body.player.username, "TestHero");
+        assert.equal(session.body.player.level, 1);
+        assert.equal(session.body.player.accuracy, 75);
+        assert.equal(session.body.player.password, undefined);
 
         const rejectedSocket = io(baseUrl, {
             autoConnect: false,

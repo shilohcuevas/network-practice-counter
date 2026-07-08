@@ -34,6 +34,18 @@ The server uses `PORT` when supplied by the host and otherwise uses port 3000.
 - Work on `codex-migration`; treat `main` as the Render production branch.
 - Do not merge into `main` until durable production player storage is confirmed.
 
+## Adventurer's Journal UI pattern
+
+- Treat the sidebar as the player's identity and the main content area as the world.
+- Keep the sidebar intentionally static and compact so Travel and Notice Board stay in consistent positions across page navigation.
+- Always limit the sidebar character panel to the permanent core summary: Level, HP, and Gold.
+- Keep activity-specific information in the main content area for the current page.
+- Do not add Damage, Accuracy, Evasion, equipment, professions, achievements, skills, or other expanded character details to the sidebar.
+- Save complete character details for the future character sheet opened by See All.
+- Use the Notice Board to answer "What is happening in the world?" and keep it suitable for future tutorial hints, world events, patch notes, location unlocks, seasonal notices, or server-wide announcements.
+- In combat, present only actions relevant to the current state: choosing an enemy, fighting an enemy, or reviewing a resolved fight. Hide the Current Fight panel while choosing, keep Flee as the only way to leave an active fight, and show Choose Another Enemy only after victory or defeat so the combat log remains readable.
+- Keep primary and caution button styling consistent throughout the game; differentiate dangerous or secondary actions primarily through color, not shape, size, spacing, or typography.
+
 ## Verification
 
 - Run `npm test` after changes; it covers public assets plus storage, authentication, sessions, cooldowns, and combat state.

@@ -112,6 +112,16 @@ for (const username in players) {
         upgradedOlderAccount = true;
     }
 
+    if (!Number.isInteger(players[username].level) || players[username].level < 1) {
+        players[username].level = 1;
+        upgradedOlderAccount = true;
+    }
+
+    if (!Number.isInteger(players[username].accuracy) || players[username].accuracy < 0) {
+        players[username].accuracy = 75;
+        upgradedOlderAccount = true;
+    }
+
     if (players[username].maxHp === undefined) {
         players[username].maxHp = 20;
         upgradedOlderAccount = true;
@@ -159,7 +169,9 @@ function savePlayers() {
 function getPublicPlayer(player) {
     return {
         username: player.username,
+        level: player.level,
         damage: player.damage,
+        accuracy: player.accuracy,
         money: player.money,
         hp: player.hp,
         maxHp: player.maxHp,
@@ -414,7 +426,9 @@ app.post("/api/register", async (req, res) => {
     players[username] = {
         username,
         password: await hashPassword(password),
+        level: 1,
         damage: 1,
+        accuracy: 75,
         money: 0,
         hp: 20,
         maxHp: 20,

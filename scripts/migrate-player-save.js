@@ -79,7 +79,9 @@ async function migratePlayers(source) {
         }
 
         const username = typeof player.username === "string" && player.username ? player.username : accountName;
+        const level = positiveInteger(player.level, 1);
         const damage = positiveInteger(player.damage, 1);
+        const accuracy = positiveInteger(player.accuracy, 75);
         const maxHp = positiveInteger(player.maxHp, 20);
         const hp = Math.min(maxHp, positiveInteger(player.hp, maxHp));
         const money = nonnegativeNumber(player.money, 0);
@@ -100,7 +102,9 @@ async function migratePlayers(source) {
         migrated[accountName] = {
             username,
             password,
+            level,
             damage,
+            accuracy,
             money,
             hp,
             maxHp,

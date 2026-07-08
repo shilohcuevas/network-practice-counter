@@ -20,6 +20,8 @@ async function run() {
     assert.match(hero.password, /^scrypt\$/);
     assert.equal((await verifyPassword("legacy-secret", hero.password)).valid, true);
     assert.deepEqual(hero.unlockedEnemies, ["rat", "slime", "goblin", "orc"]);
+    assert.equal(hero.level, 1);
+    assert.equal(hero.accuracy, 75);
     assert.equal(hero.money, 125);
     assert.equal(hero.hp, 38);
 
