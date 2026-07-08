@@ -6,24 +6,57 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="game-shell">
+        <header class="game-header">
+            <p class="eyebrow">Adventurer's Journal</p>
+            <h1>Training Grounds</h1>
+            <p class="subtitle">Turn coin into lasting strength before testing yourself in combat.</p>
+        </header>
 
-    <h1>Training Grounds</h1>
+        <div class="menu-frame">
+            <aside class="side-panel">
+                <section class="panel-section">
+                    <h2>Your Character</h2>
+                    <p id="characterInfo" class="stat-card">Loading...</p>
+                </section>
 
-    <h2>Your Character</h2>
-    <p id="characterInfo">Loading...</p>
+                <section class="panel-section">
+                    <h2>Travel</h2>
+                    <nav class="nav-list" aria-label="Game areas">
+                        <button class="nav-button" onclick="window.location.href='index.html'">Town</button>
+                        <button class="nav-button active" onclick="window.location.href='training.html'">Training</button>
+                        <button class="nav-button" onclick="window.location.href='work.html'">Work</button>
+                        <button class="nav-button" onclick="window.location.href='combat.html'">Combat</button>
+                    </nav>
+                </section>
 
-    <button id="trainButton">Train Damage</button>
-    <button id="trainHealthButton">
-        Train Health
-    </button>
+                <button id="logoutButton" class="danger-button">Logout</button>
+            </aside>
 
-    <p id="trainingMessage"></p>
+            <main class="main-panel">
+                <section class="journal-card">
+                    <h2>Training Menu</h2>
+                    <p class="journal-lede">Choose the kind of growth you want next. Damage ends fights faster; health helps you survive longer.</p>
 
-    <br><br>
+                    <div class="action-grid">
+                        <article class="action-card">
+                            <h3>Damage</h3>
+                            <p>Increase how hard you hit each round.</p>
+                            <button id="trainButton" class="action-button">Train Damage</button>
+                        </article>
 
-    <button onclick="window.location.href='index.html'">
-        Return to Town
-    </button>
+                        <article class="action-card">
+                            <h3>Health</h3>
+                            <p>Increase your maximum HP for tougher enemies.</p>
+                            <button id="trainHealthButton" class="action-button">Train Health</button>
+                        </article>
+                    </div>
+                </section>
+
+                <p id="trainingMessage" class="message"></p>
+            </main>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
 
@@ -34,6 +67,7 @@
         const trainButton = document.getElementById("trainButton");
         const trainHealthButton = document.getElementById("trainHealthButton");
         const trainingMessage = document.getElementById("trainingMessage");
+        const logoutButton = document.getElementById("logoutButton");
         let currentPlayer = null;
         let gameConfig = null;
 
@@ -92,6 +126,12 @@
                 trainingMessage.textContent = result.message;
                 applyCooldown(trainHealthButton, result.cooldownMs || 250);
             });
+        });
+
+        logoutButton.addEventListener("click", async () => {
+            await fetch("/api/logout", { method: "POST" });
+            socket.disconnect();
+            window.location.href = "login.html";
         });
     </script>
 

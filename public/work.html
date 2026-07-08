@@ -6,21 +6,44 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="game-shell">
+        <header class="game-header">
+            <p class="eyebrow">Adventurer's Journal</p>
+            <h1>Work Board</h1>
+            <p class="subtitle">Earn steady coin, then spend it on healing, training, or enemy unlocks.</p>
+        </header>
 
-    <h1>Work</h1>
+        <div class="menu-frame">
+            <aside class="side-panel">
+                <section class="panel-section">
+                    <h2>Your Character</h2>
+                    <p id="characterInfo" class="stat-card">Loading...</p>
+                </section>
 
-    <h2>Your Character</h2>
-    <p id="characterInfo">Loading...</p>
+                <section class="panel-section">
+                    <h2>Travel</h2>
+                    <nav class="nav-list" aria-label="Game areas">
+                        <button class="nav-button" onclick="window.location.href='index.html'">Town</button>
+                        <button class="nav-button" onclick="window.location.href='training.html'">Training</button>
+                        <button class="nav-button active" onclick="window.location.href='work.html'">Work</button>
+                        <button class="nav-button" onclick="window.location.href='combat.html'">Combat</button>
+                    </nav>
+                </section>
 
-    <button id="workButton">Work Job</button>
+                <button id="logoutButton" class="danger-button">Logout</button>
+            </aside>
 
-    <p id="workMessage"></p>
+            <main class="main-panel">
+                <section class="journal-card">
+                    <h2>Available Job</h2>
+                    <p class="journal-lede">Simple labor pays modestly, but it is safe and dependable.</p>
+                    <button id="workButton" class="action-button">Work Job</button>
+                </section>
 
-    <br><br>
-
-    <button onclick="window.location.href='index.html'">
-        Return to Town
-    </button>
+                <p id="workMessage" class="message"></p>
+            </main>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
 
@@ -30,6 +53,7 @@
         const characterInfo = document.getElementById("characterInfo");
         const workButton = document.getElementById("workButton");
         const workMessage = document.getElementById("workMessage");
+        const logoutButton = document.getElementById("logoutButton");
         let workReward = 0;
 
         socket.on("connect_error", () => {
@@ -63,6 +87,12 @@
                     workButton.textContent = `Work Job (+$${workReward})`;
                 }, result.cooldownMs || 250);
             });
+        });
+
+        logoutButton.addEventListener("click", async () => {
+            await fetch("/api/logout", { method: "POST" });
+            socket.disconnect();
+            window.location.href = "login.html";
         });
     </script>
 

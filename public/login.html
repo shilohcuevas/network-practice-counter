@@ -6,19 +6,25 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <main class="login-shell">
+        <section class="login-card">
+            <p class="eyebrow">Adventurer's Journal</p>
+            <h1>Login / Register</h1>
+            <p class="subtitle">Enter the town square and continue building your character.</p>
 
-    <h1>Login / Register</h1>
+            <div class="field-group">
+                <input id="usernameInput" placeholder="Username" autocomplete="username">
+                <input id="passwordInput" placeholder="Password" type="password" autocomplete="current-password">
+            </div>
 
-    <input id="usernameInput" placeholder="Username">
-    <br><br>
+            <div class="button-row">
+                <button id="registerButton">Register</button>
+                <button id="loginButton">Login</button>
+            </div>
 
-    <input id="passwordInput" placeholder="Password" type="password">
-    <br><br>
-
-    <button id="registerButton">Register</button>
-    <button id="loginButton">Login</button>
-
-    <p id="message"></p>
+            <p id="message" class="message"></p>
+        </section>
+    </main>
 
     <script>
         const usernameInput = document.getElementById("usernameInput");

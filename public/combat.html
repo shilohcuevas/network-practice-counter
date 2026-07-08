@@ -6,39 +6,67 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Combat Grounds</h1>
+    <div class="game-shell">
+        <header class="game-header">
+            <p class="eyebrow">Adventurer's Journal</p>
+            <h1>Combat Grounds</h1>
+            <p class="subtitle">Pick a foe, watch the round-by-round log, and return to town when you need a rest.</p>
+        </header>
 
-    <p id="playerInfo">Loading player...</p>
+        <div class="menu-frame">
+            <aside class="side-panel">
+                <section class="panel-section">
+                    <h2>Your Character</h2>
+                    <p id="playerInfo" class="stat-card">Loading player...</p>
+                </section>
 
-    <h2 id="enemyName">No enemy</h2>
-    <p id="enemyHp"></p>
+                <section class="panel-section">
+                    <h2>Travel</h2>
+                    <nav class="nav-list" aria-label="Game areas">
+                        <button class="nav-button" onclick="window.location.href='index.html'">Town</button>
+                        <button class="nav-button" onclick="window.location.href='training.html'">Training</button>
+                        <button class="nav-button" onclick="window.location.href='work.html'">Work</button>
+                        <button class="nav-button active" onclick="window.location.href='combat.html'">Combat</button>
+                    </nav>
+                </section>
 
-    <section id="enemySelection">
-        <h3>Choose Enemy</h3>
-        <div id="enemyList">Loading enemies...</div>
-    </section>
+                <button id="logoutButton" class="danger-button">Logout</button>
+            </aside>
 
-    <br>
+            <main class="main-panel">
+                <section class="journal-card">
+                    <h2>Current Fight</h2>
+                    <div class="combat-readout">
+                        <strong id="enemyName">No enemy</strong>
+                        <span id="enemyHp"></span>
+                    </div>
 
-    <div id="combatActions" hidden>
-        <button id="attackButton">Attack</button>
-        <button id="fleeButton">Flee</button>
+                    <div id="combatActions" class="combat-actions" hidden>
+                        <button id="attackButton" class="action-button">Attack</button>
+                        <button id="fleeButton" class="danger-button">Flee</button>
+                    </div>
+                    <button id="returnToEnemiesButton" class="action-button" hidden>Choose Another Enemy</button>
+                </section>
+
+                <section id="enemySelection" class="journal-card">
+                    <h2>Choose Enemy</h2>
+                    <div id="enemyList" class="enemy-grid">Loading enemies...</div>
+                </section>
+
+                <section class="journal-card">
+                    <h2>Combat Log</h2>
+                    <div id="combatLog"></div>
+                </section>
+            </main>
+        </div>
     </div>
-    <button id="returnToEnemiesButton" hidden>Choose Another Enemy</button>
-
-    <h3>Combat Log</h3>
-    <div id="combatLog"></div>
-
-    <br>
-    <button onclick="window.location.href='index.html'">
-        Back to Town
-    </button>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let gameConfig = null;
         let currentPlayer = null;
+        const logoutButton = document.getElementById("logoutButton");
 
         socket.on("connect_error", () => {
             window.location.href = "login.html";
@@ -123,9 +151,11 @@
 
                 if (unlocked) {
                     button.textContent = `Fight ${enemy.name}`;
+                    button.className = "action-button";
                     button.addEventListener("click", () => startFight(enemyType));
                 } else {
                     button.textContent = `Unlock ${enemy.name} ($${enemy.unlockCost})`;
+                    button.className = "action-button";
                     button.addEventListener("click", () => unlockEnemy(enemyType));
                 }
 
@@ -159,6 +189,12 @@
 
         document.getElementById("returnToEnemiesButton").addEventListener("click", () => {
             showEnemySelection();
+        });
+
+        logoutButton.addEventListener("click", async () => {
+            await fetch("/api/logout", { method: "POST" });
+            socket.disconnect();
+            window.location.href = "login.html";
         });
 
         socket.on("fightUpdate", (fight) => {
