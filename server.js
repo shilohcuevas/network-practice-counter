@@ -1,855 +1,114 @@
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const { Server } = require("socket.io");
-const { PlayerStore } = require("./lib/player-store");
-const { createSessionToken, hashPassword, verifyPassword } = require("./lib/security");
+import express from 'express';
+import http from 'node:http';
+import { Server } from 'socket.io';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const root = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const SAVE_FILE = process.env.SAVE_FILE || path.join(__dirname, "players.json");
-const SESSION_COOKIE = "game_session";
-const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
-const AUTH_WINDOW_MS = 15 * 60 * 1000;
-const AUTH_ATTEMPT_LIMIT = 10;
-const WORK_REWARD = 5;
-const HEAL_COST_PER_HP = 1;
-const DEFEAT_RETURN_HP_PERCENT = 0.25;
-const DAMAGE_TRAINING_MULTIPLIER = 10;
-const HEALTH_TRAINING_OFFSET = 10;
-
-const ACTION_COOLDOWNS = {
-    trainDamage: 5000,
-    trainHealth: 5000,
-    workJob: 5000,
-    attackEnemy: 500
-};
-
-const ENEMIES = {
-    rat: {
-        name: "Rat",
-        hp: 5,
-        maxHp: 5,
-        damage: 1,
-        rewardMoney: 8,
-        unlockCost: 0,
-        requires: null,
-        recommendedDamage: 1,
-        recommendedMaxHp: 20
-    },
-    slime: {
-        name: "Slime",
-        hp: 12,
-        maxHp: 12,
-        damage: 2,
-        rewardMoney: 18,
-        unlockCost: 25,
-        requires: "rat",
-        recommendedDamage: 2,
-        recommendedMaxHp: 25
-    },
-    goblin: {
-        name: "Goblin",
-        hp: 25,
-        maxHp: 25,
-        damage: 3,
-        rewardMoney: 35,
-        unlockCost: 100,
-        requires: "slime",
-        recommendedDamage: 4,
-        recommendedMaxHp: 30
-    },
-    orc: {
-        name: "Orc",
-        hp: 50,
-        maxHp: 50,
-        damage: 5,
-        rewardMoney: 70,
-        unlockCost: 350,
-        requires: "goblin",
-        recommendedDamage: 7,
-        recommendedMaxHp: 40
-    },
-    troll: {
-        name: "Troll",
-        hp: 90,
-        maxHp: 90,
-        damage: 8,
-        rewardMoney: 135,
-        unlockCost: 900,
-        requires: "orc",
-        recommendedDamage: 10,
-        recommendedMaxHp: 55
-    }
-};
-
-if (IS_PRODUCTION && !process.env.SAVE_FILE) {
-    throw new Error(
-        "SAVE_FILE is required in production. Configure it beneath a persistent disk mount before starting the game."
-    );
-}
-
-const playerStore = new PlayerStore(SAVE_FILE);
-const players = playerStore.load();
-const sessions = new Map();
-const activeFights = new Map();
-const actionCooldowns = new Map();
-const authAttempts = new Map();
-
-let upgradedOlderAccount = false;
-
-for (const username in players) {
-    if (players[username].money === undefined) {
-        players[username].money = 0;
-        upgradedOlderAccount = true;
-    }
-
-    if (players[username].damage === undefined) {
-        players[username].damage = 1;
-        upgradedOlderAccount = true;
-    }
-
-    if (!Number.isInteger(players[username].level) || players[username].level < 1) {
-        players[username].level = 1;
-        upgradedOlderAccount = true;
-    }
-
-    if (!Number.isInteger(players[username].accuracy) || players[username].accuracy < 0) {
-        players[username].accuracy = 75;
-        upgradedOlderAccount = true;
-    }
-
-    if (players[username].maxHp === undefined) {
-        players[username].maxHp = 20;
-        upgradedOlderAccount = true;
-    }
-
-    if (players[username].hp === undefined) {
-        players[username].hp = players[username].maxHp;
-        upgradedOlderAccount = true;
-    }
-
-    if (!Array.isArray(players[username].unlockedEnemies)) {
-        players[username].unlockedEnemies = Object.entries(ENEMIES)
-            .filter(([, enemy]) => (
-                players[username].damage >= enemy.recommendedDamage
-                && players[username].maxHp >= enemy.recommendedMaxHp
-            ))
-            .map(([enemyType]) => enemyType);
-
-        if (!players[username].unlockedEnemies.includes("rat")) {
-            players[username].unlockedEnemies.unshift("rat");
-        }
-
-        upgradedOlderAccount = true;
-    }
-
-    const validUnlocks = players[username].unlockedEnemies.filter((enemyType) => ENEMIES[enemyType]);
-
-    if (!validUnlocks.includes("rat")) validUnlocks.unshift("rat");
-
-    if (validUnlocks.length !== players[username].unlockedEnemies.length
-        || validUnlocks.some((enemyType, index) => enemyType !== players[username].unlockedEnemies[index])) {
-        players[username].unlockedEnemies = validUnlocks;
-        upgradedOlderAccount = true;
-    }
-}
-
-if (upgradedOlderAccount) {
-    savePlayers();
-}
-
-function savePlayers() {
-    playerStore.save(players);
-}
-
-function getPublicPlayer(player) {
-    return {
-        username: player.username,
-        level: player.level,
-        damage: player.damage,
-        accuracy: player.accuracy,
-        money: player.money,
-        hp: player.hp,
-        maxHp: player.maxHp,
-        unlockedEnemies: [...player.unlockedEnemies]
-    };
-}
-
-function getPublicGameConfig() {
-    const enemies = {};
-
-    for (const [enemyType, enemy] of Object.entries(ENEMIES)) {
-        enemies[enemyType] = {
-            name: enemy.name,
-            hp: enemy.maxHp,
-            damage: enemy.damage,
-            rewardMoney: enemy.rewardMoney,
-            unlockCost: enemy.unlockCost,
-            requires: enemy.requires,
-            recommendedDamage: enemy.recommendedDamage,
-            recommendedMaxHp: enemy.recommendedMaxHp
-        };
-    }
-
-    return {
-        enemies,
-        workReward: WORK_REWARD,
-        healCostPerHp: HEAL_COST_PER_HP,
-        defeatReturnHpPercent: DEFEAT_RETURN_HP_PERCENT,
-        damageTrainingMultiplier: DAMAGE_TRAINING_MULTIPLIER,
-        healthTrainingOffset: HEALTH_TRAINING_OFFSET
-    };
-}
-
-function getDamageTrainingCost(player) {
-    return player.damage * DAMAGE_TRAINING_MULTIPLIER;
-}
-
-function getHealthTrainingCost(player) {
-    return Math.max(1, player.maxHp - HEALTH_TRAINING_OFFSET);
-}
-
-function publicPlayers() {
-    const safePlayers = {};
-
-    for (const username in players) {
-        safePlayers[username] = getPublicPlayer(players[username]);
-    }
-
-    return safePlayers;
-}
-
-function sendPlayerData(socket, player) {
-    socket.emit("playerData", getPublicPlayer(player));
-}
-
-function broadcastPlayers() {
-    io.emit("playersUpdate", publicPlayers());
-}
-
-function parseCookies(cookieHeader = "") {
-    const cookies = {};
-
-    for (const part of cookieHeader.split(";")) {
-        const separator = part.indexOf("=");
-
-        if (separator === -1) continue;
-
-        const name = part.slice(0, separator).trim();
-        const value = part.slice(separator + 1).trim();
-
-        if (name) {
-            try {
-                cookies[name] = decodeURIComponent(value);
-            } catch {
-                cookies[name] = value;
-            }
-        }
-    }
-
-    return cookies;
-}
-
-function getSession(cookieHeader) {
-    const token = parseCookies(cookieHeader)[SESSION_COOKIE];
-    if (!token) return null;
-
-    const session = sessions.get(token);
-    if (!session) return null;
-
-    if (session.expiresAt <= Date.now()) {
-        sessions.delete(token);
-        return null;
-    }
-
-    return { token, ...session };
-}
-
-function createSession(username) {
-    const token = createSessionToken();
-
-    sessions.set(token, {
-        username,
-        expiresAt: Date.now() + SESSION_DURATION_MS
-    });
-
-    return token;
-}
-
-function sessionCookie(token) {
-    const parts = [
-        `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
-        "HttpOnly",
-        "Path=/",
-        "SameSite=Lax",
-        `Max-Age=${Math.floor(SESSION_DURATION_MS / 1000)}`
-    ];
-
-    if (IS_PRODUCTION) parts.push("Secure");
-
-    return parts.join("; ");
-}
-
-function expiredSessionCookie() {
-    const parts = [
-        `${SESSION_COOKIE}=`,
-        "HttpOnly",
-        "Path=/",
-        "SameSite=Lax",
-        "Max-Age=0"
-    ];
-
-    if (IS_PRODUCTION) parts.push("Secure");
-
-    return parts.join("; ");
-}
-
-function consumeAuthAttempt(req) {
-    const key = req.ip;
-    const now = Date.now();
-    let record = authAttempts.get(key);
-
-    if (!record || record.resetAt <= now) {
-        record = { count: 0, resetAt: now + AUTH_WINDOW_MS };
-    }
-
-    record.count++;
-    authAttempts.set(key, record);
-
-    return record.count <= AUTH_ATTEMPT_LIMIT;
-}
-
-function validateRegistration(username, password) {
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
-        return "Username must be 3-20 characters using letters, numbers, or underscores.";
-    }
-
-    if (typeof password !== "string" || password.length < 8 || password.length > 128) {
-        return "Password must be 8-128 characters.";
-    }
-
-    return null;
-}
-
-function requireHttpSession(req, res, next) {
-    const session = getSession(req.headers.cookie);
-
-    if (!session || !players[session.username]) {
-        res.status(401).json({ success: false, message: "Authentication required." });
-        return;
-    }
-
-    req.gameSession = session;
-    next();
-}
-
-function getCooldownKey(username, action) {
-    return `${username}:${action}`;
-}
-
-function claimCooldown(username, action) {
-    const duration = ACTION_COOLDOWNS[action] || 0;
-    const key = getCooldownKey(username, action);
-    const now = Date.now();
-    const availableAt = actionCooldowns.get(key) || 0;
-
-    if (availableAt > now) {
-        return availableAt - now;
-    }
-
-    actionCooldowns.set(key, now + duration);
-    return 0;
-}
-
-function clearPlayerRuntimeState(username) {
-    activeFights.delete(username);
-
-    for (const key of actionCooldowns.keys()) {
-        if (key.startsWith(`${username}:`)) {
-            actionCooldowns.delete(key);
-        }
-    }
-}
-
-function reply(callback, payload) {
-    if (typeof callback === "function") {
-        callback(payload);
-    }
-}
-
-function requirePeacefulState(socket, username, callback) {
-    if (!activeFights.has(username)) return true;
-
-    reply(callback, {
-        success: false,
-        message: "Finish or flee from your current fight first."
-    });
-
-    return false;
-}
-
-app.set("trust proxy", IS_PRODUCTION ? 1 : false);
-app.use(express.json({ limit: "10kb" }));
-app.use("/api", (req, res, next) => {
-    res.setHeader("Cache-Control", "no-store");
-    next();
+const SIZE = 256;
+const SEED = 847291;
+const dataDir = process.env.PRISMA_DATA_DIR || path.join(root, 'data', 'prisma');
+const file = path.join(dataDir, 'world.json');
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+function hash(x,y,seed=SEED) {let n=Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(seed,1442695041); n=Math.imul(n^(n>>>13),1274126177); return ((n^(n>>>16))>>>0)/4294967295;}
+function smooth(t){return t*t*(3-2*t)}
+function noise(x,y,scale){const a=Math.floor(x/scale),b=Math.floor(y/scale),u=smooth(x/scale-a),v=smooth(y/scale-b);const m=(i,j)=>hash(i,j);return (m(a,b)*(1-u)+m(a+1,b)*u)*(1-v)+(m(a,b+1)*(1-u)+m(a+1,b+1)*u)*v;}
+function generate(){const tiles=[];for(let y=0;y<SIZE;y++){const row=[];for(let x=0;x<SIZE;x++){const elevation=noise(x,y,48)*0.65+noise(x,y,15)*0.25+noise(x,y,5)*0.1;const trees=noise(x+900,y-300,25);let t=elevation<0.36?2:elevation>0.71?3:trees>0.57&&hash(x,y,4)>0.83?4:hash(x,y,9)>0.9?1:0;const dx=x-SIZE/2,dy=y-SIZE/2;if(dx*dx+dy*dy<100)t=0;row.push(t);}tiles.push(row);}return {size:SIZE,seed:SEED,tiles};}
+let world;
+if(fs.existsSync(file)){world=JSON.parse(fs.readFileSync(file,'utf8'));console.log('Loaded persistent world');}
+else{world=generate();fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(world));console.log('Generated world once and saved it');}
+app.use(express.static(path.join(root,'public')));
+app.get('/api/world',(req,res)=>res.json(world));
+app.get('/healthz', (_req,res)=>res.json({status:'ok',game:'prisma',version:'0.1.7'}));
+const players = new Map();
+const charactersFile=path.join(dataDir,'characters.json');
+let characters={};
+try { characters=JSON.parse(fs.readFileSync(charactersFile,'utf8')); } catch(e) { if(e.code!=='ENOENT') console.warn('Character save unreadable:',e.message); }
+const defaultCharacter=()=>({gold:0,damageLevel:0,healthLevel:0,speedLevel:0});
+const stats=c=>({damage:10+c.damageLevel,maxHp:100+10*c.healthLevel,cooldownMs:Math.max(600,1500-50*c.speedLevel)});
+const costs=c=>({damage:50*(c.damageLevel+1),health:50*(c.healthLevel+1),speed:50*(c.speedLevel+1)});
+function saveCharacters(){fs.mkdirSync(path.dirname(charactersFile),{recursive:true});const temp=charactersFile+'.tmp';fs.writeFileSync(temp,JSON.stringify(characters,null,2));fs.renameSync(temp,charactersFile);}
+function publicCharacter(p){return {gold:p.character.gold,damageLevel:p.character.damageLevel,healthLevel:p.character.healthLevel,speedLevel:p.character.speedLevel,...stats(p.character),costs:costs(p.character)};}
+const SPAWN_X=(SIZE/2+0.5)*32,SPAWN_Y=(SIZE/2+0.5)*32;
+const SHOP_RADIUS=310;
+const DUMMY_GOLD=15;
+function nearShop(p){return Math.hypot(p.x-SPAWN_X,p.y-SPAWN_Y)<=SHOP_RADIUS;}
+
+const projectiles=[];
+const combatEvents=[];
+let nextCombatEvent=1;
+function combatEvent(type,x,y,amount=0,target=''){combatEvents.push({id:nextCombatEvent++,type,x,y,amount,target});if(combatEvents.length>80)combatEvents.shift();}
+const dummies=[{id:'dummy-1',x:(SIZE/2+5.5)*32,y:(SIZE/2+0.5)*32,hp:100},{id:'dummy-2',x:(SIZE/2+3.5)*32,y:(SIZE/2+4.5)*32,hp:100}];
+let nextProjectile=1;
+const Q_SPEED=650;
+const Q_RANGE=510;
+
+const SPEED = 185;
+const TILE=32;
+function blocked(x,y){const tx=Math.floor(x/TILE),ty=Math.floor(y/TILE);return tx<0||ty<0||tx>=SIZE||ty>=SIZE||[3,4].includes(world.tiles[ty][tx]);}
+function validPosition(x,y){const r=10;return !blocked(x-r,y-r)&&!blocked(x+r,y-r)&&!blocked(x-r,y+r)&&!blocked(x+r,y+r);}
+function moveAxis(p,axis,delta){const next=clamp(p[axis]+delta,12,SIZE*TILE-12);const x=axis==='x'?next:p.x,y=axis==='y'?next:p.y;if(validPosition(x,y))p[axis]=next;}
+io.on('connection',socket=>{
+ let p=null;
+ socket.on('join',v=>{
+  if(p)return;
+  const token=typeof v?.token==='string'&&/^[a-f0-9]{32,128}$/i.test(v.token)?v.token:null;
+  if(!token){socket.emit('notice','Invalid character ID. Refresh the page.');return;}
+  // Only one active connection per character, avoiding concurrent edits to one save.
+  for(const other of players.values())if(other.token===token){socket.emit('notice','Character already online in another tab.');return;}
+  const saved=characters[token]||defaultCharacter();
+  const character={...defaultCharacter(),...saved};
+  for(const k of ['gold','damageLevel','healthLevel','speedLevel']){
+   if(!Number.isSafeInteger(character[k])||character[k]<0)character[k]=0;
+  }
+  const st=stats(character);
+  p={id:socket.id,token,character,x:SPAWN_X,y:SPAWN_Y,angle:0,color:`hsl(${Math.floor(Math.random()*360)} 75% 58%)`,hp:st.maxHp,lastShot:0,input:{x:0,y:0}};
+  players.set(socket.id,p);
+  characters[token]=character;
+  saveCharacters();
+  socket.emit('welcome',{id:socket.id,character:publicCharacter(p)});
+ });
+ socket.on('input',v=>{if(!p||!v||typeof v!=='object')return;const x=Number(v.x),y=Number(v.y),a=Number(v.angle);if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(a))return;p.input={x:clamp(x,-1,1),y:clamp(y,-1,1)};p.angle=a;});
+ socket.on('castQ',v=>{
+  if(!p||!v||typeof v!=='object')return;
+  const angle=Number(v.angle);
+  if(!Number.isFinite(angle)||Math.abs(angle)>100000)return;
+  const now=Date.now(),st=stats(p.character);
+  if(now-p.lastShot<st.cooldownMs||p.hp<=0)return;
+  p.lastShot=now;
+  const vx=Math.cos(angle),vy=Math.sin(angle);
+  projectiles.push({id:nextProjectile++,owner:p.id,x:p.x+vx*20,y:p.y+vy*20,vx:vx*Q_SPEED,vy:vy*Q_SPEED,distance:0,damage:st.damage});
+  p.angle=angle;
+  socket.emit('qCast',{cooldownMs:st.cooldownMs});
+ });
+ socket.on('upgrade',v=>{
+  if(!p||!['damage','health','speed'].includes(v?.stat))return;
+  if(!nearShop(p)){socket.emit('notice','Return to the starting town to buy upgrades.');return;}
+  const c=p.character,price=costs(c)[v.stat];
+  const key={damage:'damageLevel',health:'healthLevel',speed:'speedLevel'}[v.stat];
+  if(c.gold<price||c[key]>=18){socket.emit('notice',c[key]>=18?'Upgrade cap reached.':'Not enough gold.');return;}
+  c.gold-=price;c[key]++;
+  if(v.stat==='health')p.hp+=10;
+  saveCharacters();socket.emit('character',publicCharacter(p));
+ });
+ socket.on('disconnect',()=>{if(p)players.delete(socket.id);});
 });
-
-app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
-});
-
-app.post("/api/register", async (req, res) => {
-    if (!consumeAuthAttempt(req)) {
-        res.status(429).json({ success: false, message: "Too many attempts. Try again later." });
-        return;
-    }
-
-    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
-    const password = req.body?.password;
-    const validationMessage = validateRegistration(username, password);
-
-    if (validationMessage) {
-        res.status(400).json({ success: false, message: validationMessage });
-        return;
-    }
-
-    if (players[username]) {
-        res.status(409).json({ success: false, message: "Username already exists." });
-        return;
-    }
-
-    players[username] = {
-        username,
-        password: await hashPassword(password),
-        level: 1,
-        damage: 1,
-        accuracy: 75,
-        money: 0,
-        hp: 20,
-        maxHp: 20,
-        unlockedEnemies: ["rat"]
-    };
-
-    savePlayers();
-    const token = createSession(username);
-
-    res.setHeader("Set-Cookie", sessionCookie(token));
-    res.status(201).json({
-        success: true,
-        username,
-        message: "Account created."
-    });
-
-    broadcastPlayers();
-});
-
-app.post("/api/login", async (req, res) => {
-    if (!consumeAuthAttempt(req)) {
-        res.status(429).json({ success: false, message: "Too many attempts. Try again later." });
-        return;
-    }
-
-    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-    const player = players[username];
-
-    if (!player || !password || password.length > 128) {
-        res.status(401).json({ success: false, message: "Invalid username or password." });
-        return;
-    }
-
-    const passwordResult = await verifyPassword(password, player.password);
-
-    if (!passwordResult.valid) {
-        res.status(401).json({ success: false, message: "Invalid username or password." });
-        return;
-    }
-
-    if (passwordResult.needsUpgrade) {
-        player.password = await hashPassword(password);
-        savePlayers();
-        playerStore.refreshBackup();
-    }
-
-    const token = createSession(username);
-    res.setHeader("Set-Cookie", sessionCookie(token));
-    res.json({ success: true, username, message: "Logged in." });
-});
-
-app.get("/api/session", requireHttpSession, (req, res) => {
-    res.json({
-        success: true,
-        player: getPublicPlayer(players[req.gameSession.username])
-    });
-});
-
-app.post("/api/logout", (req, res) => {
-    const session = getSession(req.headers.cookie);
-
-    if (session) {
-        sessions.delete(session.token);
-        clearPlayerRuntimeState(session.username);
-
-        for (const connectedSocket of io.sockets.sockets.values()) {
-            if (connectedSocket.data.username === session.username) {
-                connectedSocket.disconnect(true);
-            }
-        }
-    }
-
-    res.setHeader("Set-Cookie", expiredSessionCookie());
-    res.json({ success: true, message: "Logged out." });
-});
-
-app.use(express.static("public"));
-
-io.use((socket, next) => {
-    const session = getSession(socket.request.headers.cookie);
-
-    if (!session || !players[session.username]) {
-        next(new Error("Authentication required."));
-        return;
-    }
-
-    socket.data.username = session.username;
-    socket.data.sessionToken = session.token;
-    next();
-});
-
-io.on("connection", (socket) => {
-    const username = socket.data.username;
-    const player = players[username];
-
-    console.log("Connected:", socket.id, username);
-    sendPlayerData(socket, player);
-    socket.emit("playersUpdate", publicPlayers());
-    socket.emit("gameConfig", getPublicGameConfig());
-
-    if (activeFights.has(username)) {
-        socket.emit("fightUpdate", activeFights.get(username));
-    }
-
-    socket.on("trainDamage", (callback) => {
-        if (!requirePeacefulState(socket, username, callback)) return;
-
-        const cost = getDamageTrainingCost(player);
-
-        if (player.money < cost) {
-            reply(callback, {
-                success: false,
-                message: `Damage training costs $${cost}.`,
-                cost
-            });
-            return;
-        }
-
-        const remainingMs = claimCooldown(username, "trainDamage");
-
-        if (remainingMs > 0) {
-            reply(callback, {
-                success: false,
-                message: "Damage training is still cooling down.",
-                cooldownMs: remainingMs
-            });
-            return;
-        }
-
-        player.money -= cost;
-        player.damage++;
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-
-        reply(callback, {
-            success: true,
-            message: `Damage increased by 1 for $${cost}.`,
-            cost,
-            cooldownMs: ACTION_COOLDOWNS.trainDamage
-        });
-    });
-
-    socket.on("trainHealth", (callback) => {
-        if (!requirePeacefulState(socket, username, callback)) return;
-
-        const cost = getHealthTrainingCost(player);
-
-        if (player.money < cost) {
-            reply(callback, {
-                success: false,
-                message: `Health training costs $${cost}.`,
-                cost
-            });
-            return;
-        }
-
-        const remainingMs = claimCooldown(username, "trainHealth");
-
-        if (remainingMs > 0) {
-            reply(callback, {
-                success: false,
-                message: "Health training is still cooling down.",
-                cooldownMs: remainingMs
-            });
-            return;
-        }
-
-        player.money -= cost;
-        player.maxHp += 5;
-        player.hp += 5;
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-
-        reply(callback, {
-            success: true,
-            message: `Maximum health increased by 5 for $${cost}.`,
-            cost,
-            cooldownMs: ACTION_COOLDOWNS.trainHealth
-        });
-    });
-
-    socket.on("workJob", (callback) => {
-        if (!requirePeacefulState(socket, username, callback)) return;
-
-        const remainingMs = claimCooldown(username, "workJob");
-
-        if (remainingMs > 0) {
-            reply(callback, {
-                success: false,
-                message: "You are still recovering from your last job.",
-                cooldownMs: remainingMs
-            });
-            return;
-        }
-
-        player.money += WORK_REWARD;
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-
-        reply(callback, {
-            success: true,
-            message: `You earned $${WORK_REWARD}.`,
-            reward: WORK_REWARD,
-            cooldownMs: ACTION_COOLDOWNS.workJob
-        });
-    });
-
-    socket.on("healPlayer", (callback) => {
-        if (!requirePeacefulState(socket, username, callback)) return;
-
-        const missingHp = player.maxHp - player.hp;
-        const healCost = missingHp * HEAL_COST_PER_HP;
-
-        if (missingHp <= 0) {
-            const message = "You are already at full HP.";
-            socket.emit("healMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        if (player.money < healCost) {
-            const message = `You need $${healCost} to fully heal.`;
-            socket.emit("healMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        player.money -= healCost;
-        player.hp = player.maxHp;
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-
-        const message = `You healed ${missingHp} HP for $${healCost}.`;
-        socket.emit("healMessage", message);
-        reply(callback, { success: true, message });
-    });
-
-    socket.on("startFight", (enemyType, callback) => {
-        if (activeFights.has(username)) {
-            const message = "You are already in a fight.";
-            socket.emit("combatMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        const enemyTemplate = ENEMIES[enemyType];
-
-        if (!enemyTemplate) {
-            const message = "That enemy does not exist.";
-            socket.emit("combatMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        if (!player.unlockedEnemies.includes(enemyType)) {
-            const message = `${enemyTemplate.name} is still locked.`;
-            socket.emit("combatMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        const fight = {
-            enemy: { ...enemyTemplate },
-            log: [`A ${enemyTemplate.name} stands before you.`]
-        };
-
-        activeFights.set(username, fight);
-        socket.emit("fightUpdate", fight);
-        reply(callback, { success: true, message: `Fight started against ${enemyTemplate.name}.` });
-    });
-
-    socket.on("unlockEnemy", (enemyType, callback) => {
-        if (!requirePeacefulState(socket, username, callback)) return;
-
-        const enemy = ENEMIES[enemyType];
-
-        if (!enemy) {
-            reply(callback, { success: false, message: "That enemy does not exist." });
-            return;
-        }
-
-        if (player.unlockedEnemies.includes(enemyType)) {
-            reply(callback, { success: false, message: `${enemy.name} is already unlocked.` });
-            return;
-        }
-
-        if (enemy.requires && !player.unlockedEnemies.includes(enemy.requires)) {
-            reply(callback, {
-                success: false,
-                message: `Unlock ${ENEMIES[enemy.requires].name} first.`
-            });
-            return;
-        }
-
-        if (player.money < enemy.unlockCost) {
-            reply(callback, {
-                success: false,
-                message: `You need $${enemy.unlockCost} to unlock ${enemy.name}.`
-            });
-            return;
-        }
-
-        player.money -= enemy.unlockCost;
-        player.unlockedEnemies.push(enemyType);
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-
-        reply(callback, {
-            success: true,
-            message: `${enemy.name} unlocked for $${enemy.unlockCost}.`
-        });
-    });
-
-    socket.on("fleeFight", (callback) => {
-        if (!activeFights.has(username)) {
-            reply(callback, { success: false, message: "You are not in a fight." });
-            return;
-        }
-
-        activeFights.delete(username);
-        reply(callback, { success: true, message: "You fled from the fight." });
-        socket.emit("fightEnded", "You fled from the fight.");
-    });
-
-    socket.on("attackEnemy", (callback) => {
-        const fight = activeFights.get(username);
-
-        if (!fight) {
-            const message = "You are not in a fight.";
-            socket.emit("combatMessage", message);
-            reply(callback, { success: false, message });
-            return;
-        }
-
-        const remainingMs = claimCooldown(username, "attackEnemy");
-
-        if (remainingMs > 0) {
-            reply(callback, {
-                success: false,
-                message: "You must wait before attacking again.",
-                cooldownMs: remainingMs
-            });
-            return;
-        }
-
-        const enemy = fight.enemy;
-
-        enemy.hp -= player.damage;
-        fight.log.push(`You hit the ${enemy.name} for ${player.damage} damage.`);
-        fight.log = fight.log.slice(-10);
-
-        if (enemy.hp <= 0) {
-            enemy.hp = 0;
-            player.money += enemy.rewardMoney;
-            fight.log.push(`You defeated the ${enemy.name}!`);
-            fight.log.push(`You earned $${enemy.rewardMoney}.`);
-            fight.log = fight.log.slice(-10);
-
-            savePlayers();
-            sendPlayerData(socket, player);
-            broadcastPlayers();
-            socket.emit("fightUpdate", fight);
-            activeFights.delete(username);
-
-            reply(callback, {
-                success: true,
-                message: `You defeated the ${enemy.name}.`,
-                cooldownMs: ACTION_COOLDOWNS.attackEnemy,
-                fightEnded: true
-            });
-            return;
-        }
-
-        player.hp -= enemy.damage;
-        fight.log.push(`The ${enemy.name} hits you for ${enemy.damage} damage.`);
-
-        if (player.hp <= 0) {
-            player.hp = Math.max(1, Math.ceil(player.maxHp * DEFEAT_RETURN_HP_PERCENT));
-            fight.log.push(`You were defeated and returned with ${player.hp} HP.`);
-            fight.log = fight.log.slice(-10);
-
-            savePlayers();
-            sendPlayerData(socket, player);
-            broadcastPlayers();
-            socket.emit("fightUpdate", fight);
-            activeFights.delete(username);
-
-            reply(callback, {
-                success: true,
-                message: "You were defeated.",
-                cooldownMs: ACTION_COOLDOWNS.attackEnemy,
-                fightEnded: true
-            });
-            return;
-        }
-
-        savePlayers();
-        sendPlayerData(socket, player);
-        broadcastPlayers();
-        socket.emit("fightUpdate", fight);
-
-        reply(callback, {
-            success: true,
-            message: "Attack completed.",
-            cooldownMs: ACTION_COOLDOWNS.attackEnemy
-        });
-    });
-
-    socket.on("disconnect", () => {
-        console.log("Disconnected:", socket.id, username);
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+let previous=Date.now();setInterval(()=>{const now=Date.now(),dt=Math.min((now-previous)/1000,0.05);previous=now;for(const p of players.values()){let {x,y}=p.input;const length=Math.hypot(x,y);if(length>1){x/=length;y/=length;}const tile=world.tiles[Math.floor(p.y/TILE)]?.[Math.floor(p.x/TILE)];const speed=SPEED*(tile===2?0.45:1);moveAxis(p,'x',x*speed*dt);moveAxis(p,'y',y*speed*dt);}for(let i=projectiles.length-1;i>=0;i--){
+ const a=projectiles[i];
+ let hit=false;
+ const steps=Math.max(1,Math.ceil(Math.hypot(a.vx,a.vy)*dt/8));
+ for(let j=0;j<steps&&!hit;j++){
+  a.x+=a.vx*dt/steps;a.y+=a.vy*dt/steps;a.distance+=Math.hypot(a.vx,a.vy)*dt/steps;
+  if(blocked(a.x,a.y)){hit=true;break;}
+  for(const d of dummies){if(d.hp>0&&Math.hypot(a.x-d.x,a.y-d.y)<18){d.hp=Math.max(0,d.hp-a.damage);combatEvent('hit',d.x,d.y,a.damage,d.id);hit=true;if(d.hp===0){combatEvent('death',d.x,d.y,0,d.id);const owner=players.get(a.owner);if(owner){owner.character.gold+=DUMMY_GOLD;saveCharacters();io.to(owner.id).emit('character',publicCharacter(owner));io.to(owner.id).emit('notice',`NPC defeated! +${DUMMY_GOLD} gold`);}setTimeout(()=>{d.hp=100;},2500);}break;}}
+  if(hit)break;
+  for(const other of players.values()){if(other.id!==a.owner&&Math.hypot(a.x-other.x,a.y-other.y)<16){other.hp=Math.max(0,other.hp-a.damage);combatEvent('hit',other.x,other.y,a.damage,other.id);hit=true;if(other.hp===0){combatEvent('death',other.x,other.y,0,other.id);other.hp=stats(other.character).maxHp;other.x=SPAWN_X;other.y=SPAWN_Y;io.to(other.id).emit('notice','Defeated! Respawned in town.');}break;}}
+ }
+ if(hit||a.distance>=Q_RANGE)projectiles.splice(i,1);
+}
+io.emit('state',{players:Array.from(players.values(),({id,x,y,angle,color,hp,character})=>({id,x,y,angle,color,hp,maxHp:stats(character).maxHp})),projectiles,dummies,combatEvents:combatEvents.splice(0)});},1000/30);
+const PORT=Number(process.env.PORT)||3000;server.listen(PORT,'0.0.0.0',()=>console.log(`Prisma 0.1.7 listening on port ${PORT}; save directory: ${dataDir}`));
