@@ -24,3 +24,10 @@ Use two different browsers or devices at the same Render HTTPS URL. Two tabs sha
 
 ## Controls
 WASD movement; mouse aim; hold left click to fire; keys 1/2/3 to buy upgrades near town. Right click and Left Shift are reserved.
+
+
+## Performance baseline (0.1.8 Performance Alpha)
+
+Built directly from public 0.1.7. Only `public/game.js` changes. Terrain tiles are cached into 16x16-tile offscreen chunks (up to 48 in an LRU cache), and the camera draws those cached chunks instead of rebuilding every tree/rock/tile each frame. This keeps dynamic players, projectiles, damage, shops, input and networking unchanged.
+
+An on-screen overlay shows FPS, time spent in `draw()` (ms), zoom and visible terrain chunks. Compare zoomed-in and fully zoomed-out FPS against public 0.1.7, ideally at the same resolution and location. Initial entry into new terrain may briefly cost more while the cache is generated. This is a first optimization, not a guarantee of optimal FPS.
